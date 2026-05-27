@@ -1,6 +1,6 @@
 {
   "name": "@igazine/hal",
-  "version": "1.1.0",
+  "version": "1.2.1",
   "description": "TypeScript implementation of the Hybrid Automation Language (HAL)",
   "type": "module",
   "main": "dist/index.js",
