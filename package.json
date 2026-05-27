@@ -1,10 +1,14 @@
 {
-  "name": "@igazine/hal",
-  "version": "1.2.1",
-  "description": "TypeScript implementation of the Hybrid Automation Language (HAL)",
+  "name": "hank",
+  "version": "1.3.0",
+  "description": "TypeScript implementation of the Hank language",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Igazine/hank-ts.git"
+  },
   "exports": {
     ".": "./dist/index.js"
   },

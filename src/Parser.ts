@@ -320,7 +320,7 @@ export class Parser {
         const content = this.macroMap.get(rawPath);
         if (content === undefined) throw this.error(`Macro resource not found: @${rawPath}`);
 
-        const taskName = rawPath.split(/[\\/]/).pop()?.replace(/\.hal$/, '') || rawPath;
+        const taskName = rawPath.split(/[\\/]/).pop()?.replace(/\.hank$/, '') || rawPath;
 
         const lexer = new Lexer(content);
         const subParser = new Parser(lexer.tokenize(), rawPath, this.macroMap);
