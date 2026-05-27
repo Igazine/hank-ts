@@ -26,7 +26,7 @@ export class Interpreter implements ExecutionContext {
             case 'Assign':
                 const val = this.evalInScope(node.value, scope);
                 scope.set(node.name, val);
-                return { type: ValueType.Void };
+                return val;
             case 'Block':
                 // --- TASK HOISTING PASS ---
                 for (const stmt of node.stmts) {
