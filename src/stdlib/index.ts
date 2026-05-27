@@ -47,6 +47,28 @@ export const StdLib = {
             }
         };
 
+        const halEquals = (a: Value, b: Value): boolean => {
+            if (a.type !== b.type) return false;
+            switch (a.type) {
+                case ValueType.Void: return true;
+                case ValueType.Number: return a.value === b.value;
+                case ValueType.String: return a.value === b.value;
+                case ValueType.Array:
+                    if (a.value.length !== b.value.length) return false;
+                    for (let i = 0; i < a.value.length; i++) if (!halEquals(a.value[i], b.value[i])) return false;
+                    return true;
+                case ValueType.Object:
+                    if (a.value.size !== b.value.size) return false;
+                    for (const [k, v1] of a.value) {
+                        const v2 = b.value.get(k);
+                        if (!v2 || !halEquals(v1, v2)) return false;
+                    }
+                    return true;
+                case ValueType.Opaque: return a.label === b.label && a.value === b.value;
+                default: return false;
+            }
+        };
+
         return {
             log: {
                 print: (args) => { console.log(args.map(a => valToString(a)).join(' ')); return { type: ValueType.Void }; },
@@ -102,7 +124,7 @@ export const StdLib = {
                 div: (args) => (args.length < 2 || args[1].type !== ValueType.Number || (args[1] as any).value === 0) ? { type: ValueType.Void } : { type: ValueType.Number, value: (args[0] as any).value / (args[1] as any).value },
                 gt: (args) => (args.length < 2 || args[0].type !== ValueType.Number || args[1].type !== ValueType.Number) ? { type: ValueType.Void } : ((args[0] as any).value > (args[1] as any).value ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void }),
                 lt: (args) => (args.length < 2 || args[0].type !== ValueType.Number || args[1].type !== ValueType.Number) ? { type: ValueType.Void } : ((args[0] as any).value < (args[1] as any).value ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void }),
-                eq: (args) => (args.length < 2) ? { type: ValueType.Void } : (valToString(args[0]) === valToString(args[1]) ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void })
+                eq: (args) => (args.length < 2) ? { type: ValueType.Void } : (halEquals(args[0], args[1]) ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void })
             },
             logic: {
                 and: (args) => {
@@ -114,7 +136,8 @@ export const StdLib = {
                 or: (args) => {
                     for (const a of args) { if (a.type !== ValueType.Void) return a; }
                     return { type: ValueType.Void };
-                }
+                },
+                eq: (args) => (args.length < 2) ? { type: ValueType.Void } : (halEquals(args[0], args[1]) ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void })
             },
             arr: {
                 length: (args) => (args.length > 0 && args[0].type === ValueType.Array) ? { type: ValueType.Number, value: (args[0] as any).value.length } : { type: ValueType.Void },
