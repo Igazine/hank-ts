@@ -1,229 +1,185 @@
-import { Expr, Param, Value, ValueType, TaskValue, ExecutionContext, Scope, NativeFunc } from './Types.js';
-import { Lexer } from './Lexer.js';
-import { Parser } from './Parser.js';
+import { Expr, Param, Scope, TokenData, Value, ValueType, ExecutionContext } from './Types.js';
 
-export class Interpreter {
-    globalScope: Scope;
-    coreScope: Scope;
-    private depth: number = 0;
-    private static readonly MAX_DEPTH = 500;
+export class Interpreter implements ExecutionContext {
+    public globalScope: Scope;
+    private coreScope: Scope;
 
-    constructor(parentScope?: Scope, coreScope?: Scope) {
-        this.coreScope = coreScope || new HALScope();
-        this.globalScope = parentScope || new HALScope(this.coreScope);
+    constructor(parentScope: Scope | undefined, coreScope: Scope) {
+        this.coreScope = coreScope;
+        this.globalScope = new HALScope(parentScope || coreScope);
     }
 
-    run(expr: Expr): Value {
-        this.hoist(expr, this.globalScope);
-        const res = this.eval(expr, this.globalScope);
-        if (res.kind === 'Error') {
-            console.error(`Runtime Error: ${res.message}`);
-            return { type: ValueType.Void };
-        }
-        return res.value;
+    run(ast: Expr): Value {
+        return this.eval(ast);
     }
 
-    private hoist(expr: Expr, scope: Scope) {
-        if (expr.kind === 'Block') {
-            for (const stmt of expr.stmts) this.hoist(stmt, scope);
-        } else if (expr.kind === 'Assign') {
-            if (expr.value.kind === 'FuncDef') {
-                const res = this.eval(expr.value, scope);
-                if (res.kind === 'Value') {
-                    scope.set(expr.name, res.value);
+    eval(node: Expr): Value {
+        return this.evalInScope(node, this.globalScope);
+    }
+
+    private evalInScope(node: Expr, scope: Scope): Value {
+        switch (node.kind) {
+            case 'Literal': return node.value;
+            case 'Ident':
+                if (node.isCore) return this.coreScope.get(node.name);
+                return scope.get(node.name);
+            case 'Assign':
+                const val = this.evalInScope(node.value, scope);
+                scope.set(node.name, val);
+                return { type: ValueType.Void };
+            case 'Block':
+                // --- TASK HOISTING PASS ---
+                for (const stmt of node.stmts) {
+                    if (stmt.kind === 'Assign') {
+                        if (stmt.value.kind === 'FuncDef') {
+                            scope.set(stmt.name, this.evalInScope(stmt.value, scope));
+                        } else if (stmt.value.kind === 'Assign') {
+                            const inner = stmt.value;
+                            if (inner.value.kind === 'FuncDef') {
+                                scope.set(inner.name, this.evalInScope(inner.value, scope));
+                            }
+                        }
+                    }
                 }
-            }
-        }
-    }
 
-    eval(expr: Expr, scope: Scope): EvalResult {
-        switch (expr.kind) {
-            case 'Block': {
                 let last: Value = { type: ValueType.Void };
-                for (const stmt of expr.stmts) {
-                    if (stmt.kind === 'Assign' && stmt.value.kind === 'FuncDef') continue;
-                    const res = this.eval(stmt, scope);
-                    if (res.kind !== 'Value') return res;
-                    last = res.value;
+                for (const stmt of node.stmts) {
+                    last = this.evalInScope(stmt, scope);
+                    if (last.type === ValueType.Void && last.value === '_RETURN_') return last;
                 }
-                return { kind: 'Value', value: last };
-            }
-            case 'Assign': {
-                const res = this.eval(expr.value, scope);
-                if (res.kind === 'Value') {
-                    scope.set(expr.name, res.value);
-                    return { kind: 'Value', value: { type: ValueType.Void } };
-                }
-                return res;
-            }
-            case 'Literal': return { kind: 'Value', value: expr.value };
-            case 'Ident': {
-                const val = expr.isCore ? this.coreScope.get(expr.name) : scope.get(expr.name);
-                return { kind: 'Value', value: val };
-            }
-            case 'Field': {
-                const res = this.eval(expr.object, scope);
-                if (res.kind === 'Value') {
-                    if (res.value.type === ValueType.Object) {
-                        return { kind: 'Value', value: res.value.value.get(expr.fieldName) || { type: ValueType.Void } };
+                return last;
+            case 'FuncDef':
+                return {
+                    type: ValueType.Task,
+                    task: {
+                        isNative: false,
+                        name: 'anonymous',
+                        params: node.params,
+                        body: node.body,
+                        closure: scope
                     }
-                    return { kind: 'Value', value: { type: ValueType.Void } };
-                }
-                return res;
-            }
-            case 'FuncDef': {
-                return { 
-                    kind: 'Value', 
-                    value: { 
-                        type: ValueType.Task, 
-                        task: { isNative: false, params: expr.params, body: expr.body, closure: scope } // <--- Capture current scope
-                    } 
                 };
-            }
-            case 'FuncCall': {
-                if (this.depth > Interpreter.MAX_DEPTH) return { kind: 'Error', message: 'Stack overflow' };
-                
-                const resTarget = this.eval(expr.target, scope);
-                if (resTarget.kind !== 'Value') return resTarget;
-                const target = resTarget.value;
-                
-                const args: Value[] = [];
-                for (const argExpr of expr.args) {
-                    const res = this.eval(argExpr, scope);
-                    if (res.kind !== 'Value') return res;
-                    args.push(res.value);
+            case 'FuncCall':
+                const target = this.evalInScope(node.target, scope);
+                const args = node.args.map(a => this.evalInScope(a, scope));
+                return this.call(target, args);
+            case 'Field':
+                const obj = this.evalInScope(node.object, scope);
+                if (obj.type === ValueType.Object) {
+                    return obj.value.get(node.fieldName) || { type: ValueType.Void };
                 }
-                
-                return this.call(target, args, scope);
-            }
-            case 'UnOp': {
-                const res = this.eval(expr.target, scope);
-                if (res.kind !== 'Value') return res;
-                const val = res.value;
-                switch (expr.op) {
-                    case '!': return { kind: 'Value', value: this.isTruthy(val) ? { type: ValueType.Void } : { type: ValueType.Number, value: 1 } };
-                    case '?': return { kind: 'Value', value: val };
-                    case '^': return { kind: 'Return', value: val };
-                    default: return { kind: 'Value', value: { type: ValueType.Void } };
+                if (obj.type === ValueType.Array) {
+                    if (node.fieldName === 'length') return { type: ValueType.Number, value: obj.value.length };
                 }
-            }
-            case 'Object': {
-                const map = new Map<string, Value>();
-                for (const [k, vExpr] of expr.fields) {
-                    const res = this.eval(vExpr, scope);
-                    if (res.kind !== 'Value') return res;
-                    map.set(k, res.value);
+                if (obj.type === ValueType.String) {
+                    if (node.fieldName === 'length') return { type: ValueType.Number, value: obj.value.length };
                 }
-                return { kind: 'Value', value: { type: ValueType.Object, value: map } };
-            }
-            case 'Array': {
-                const vec: Value[] = [];
-                for (const itemExpr of expr.items) {
-                    const res = this.eval(itemExpr, scope);
-                    if (res.kind !== 'Value') return res;
-                    vec.push(res.value);
+                return { type: ValueType.Void };
+            case 'Object':
+                const fields = new Map<string, Value>();
+                node.fields.forEach((expr, key) => {
+                    fields.set(key, this.evalInScope(expr, scope));
+                });
+                return { type: ValueType.Object, value: fields };
+            case 'Array':
+                return { type: ValueType.Array, value: node.items.map(i => this.evalInScope(i, scope)) };
+            case 'UnOp':
+                if (node.op === '!') {
+                    const v = this.evalInScope(node.target, scope);
+                    return v.type === ValueType.Void ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void };
                 }
-                return { kind: 'Value', value: { type: ValueType.Array, value: vec } };
-            }
-            case 'FlowControl': {
-                const condRes = this.eval(expr.condition, scope);
-                if (condRes.kind !== 'Value') return condRes;
-                
-                const branch = this.isTruthy(condRes.value) ? expr.success : expr.fallback;
-                if (!branch) return { kind: 'Value', value: { type: ValueType.Void } };
-                
-                this.hoist(branch, scope);
-                const res = this.eval(branch, scope);
-                if (res.kind === 'Error' && expr.rescue) {
-                    const rescueScope = new HALScope(scope);
-                    if (expr.catchVar) {
-                        rescueScope.set(expr.catchVar, { type: ValueType.String, value: res.message });
+                if (node.op === '^') {
+                    const v = this.evalInScope(node.target, scope);
+                    return { type: ValueType.Void, value: '_RETURN_', task: { isNative: true, name: 'return', native: () => v } };
+                }
+                return { type: ValueType.Void };
+            case 'FlowControl':
+                const cond = this.evalInScope(node.condition, scope);
+                const isTruthy = cond.type !== ValueType.Void;
+                if (isTruthy) {
+                    try {
+                        return this.evalInScope(node.success, scope);
+                    } catch (e: any) {
+                        if (node.rescue) {
+                            const rescueScope = new HALScope(scope);
+                            if (node.catchVar) {
+                                rescueScope.set(node.catchVar, { type: ValueType.String, value: e.message || String(e) });
+                            }
+                            return this.evalInScope(node.rescue, rescueScope);
+                        }
+                        throw e;
                     }
-                    this.hoist(expr.rescue, rescueScope);
-                    return this.eval(expr.rescue, rescueScope);
+                } else if (node.fallback) {
+                    return this.evalInScope(node.fallback, scope);
                 }
-                return res;
-            }
+                return { type: ValueType.Void };
+            default: return { type: ValueType.Void };
         }
     }
 
-    call(task: Value, args: Value[], scope: Scope): EvalResult {
-        if (task.type !== ValueType.Task) return { kind: 'Error', message: `Target is not a function: ${ValueType[task.type]}` };
-        
-        const tv = task.task;
-        if (tv.isNative) {
-            const ctx: ExecutionContext = {
-                parse: (s) => {
-                    const lexer = new Lexer(s);
-                    const parser = new Parser(lexer.tokenize(), 'dynamic');
-                    return parser.parse();
-                },
-                eval: (n) => {
-                    const res = this.eval(n, scope);
-                    if (res.kind === 'Error') throw res.message;
-                    return res.value;
-                },
-                call: (t, as) => {
-                    const res = this.call(t, as, scope);
-                    if (res.kind === 'Error') throw res.message;
-                    return res.value;
-                },
-                scope
-            };
-            try {
-                return { kind: 'Value', value: tv.func(args, ctx) };
-            } catch (e: any) {
-                return { kind: 'Error', message: e.toString() };
+    call(task: Value, args: Value[]): Value {
+        if (task.type !== ValueType.Task || !task.task) {
+            throw new Error(`Target is not a function: ${this.valToString(task)}`);
+        }
+
+        if (task.task.isNative) {
+            return task.task.native!(args, this);
+        } else {
+            const t = task.task;
+            if (args.length > t.params!.length) throw new Error("Too many arguments");
+
+            const callScope = new HALScope(t.closure);
+            for (let i = 0; i < t.params!.length; i++) {
+                const p = t.params![i];
+                let val: Value = { type: ValueType.Void };
+                if (i < args.length) {
+                    val = args[i];
+                } else if (p.defaultValue) {
+                    val = this.evalInScope(p.defaultValue, callScope);
+                } else if (!p.isOptional) {
+                    throw new Error(`Missing required parameter: ${p.name}`);
+                }
+                callScope.set(p.name, val);
             }
-        }
 
-        // User Task
-        if (args.length > tv.params.length) return { kind: 'Error', message: 'Too many arguments' };
-        
-        this.depth++;
-        // Use captured closure!
-        const taskScope = new HALScope(tv.closure);
-        
-        for (let i = 0; i < tv.params.length; i++) {
-            const p = tv.params[i];
-            let val: Value;
-            if (i < args.length) val = args[i];
-            else if (p.defaultValue) {
-                const res = this.eval(p.defaultValue, taskScope);
-                if (res.kind !== 'Value') { this.depth--; return res; }
-                val = res.value;
-            } else if (p.isOptional) val = { type: ValueType.Void };
-            else { this.depth--; return { kind: 'Error', message: `Missing required argument: ${p.name}` }; }
-            taskScope.set(p.name, val);
+            const res = this.evalInScope(t.body!, callScope);
+            if (res.type === ValueType.Void && res.value === '_RETURN_') {
+                return res.task!.native!([], this);
+            }
+            return res;
         }
-
-        this.hoist(tv.body, taskScope);
-        const res = this.eval(tv.body, taskScope);
-        this.depth--;
-        if (res.kind === 'Return') return { kind: 'Value', value: res.value };
-        return res;
     }
 
-    private isTruthy(v: Value): boolean {
-        return v.type !== ValueType.Void;
+    get scope(): Scope {
+        return this.globalScope;
+    }
+
+    private valToString(v: Value): string {
+        switch (v.type) {
+            case ValueType.String: return v.value;
+            case ValueType.Number: return v.value.toString();
+            case ValueType.Void: return 'null';
+            case ValueType.Array: return '[Array]';
+            case ValueType.Object: return '{Object}';
+            case ValueType.Opaque: return `[Opaque:${v.label || 'Unknown'}]`;
+            case ValueType.Task: return '[Task]';
+            default: return 'null';
+        }
     }
 }
 
-export type EvalResult = 
-    | { kind: 'Value', value: Value }
-    | { kind: 'Return', value: Value }
-    | { kind: 'Error', message: string };
-
 export class HALScope implements Scope {
     private values: Map<string, Value> = new Map();
-    private parent?: Scope;
+    private parent: Scope | undefined;
 
     constructor(parent?: Scope) {
         this.parent = parent;
     }
 
     get(name: string): Value {
-        return this.values.get(name) || this.parent?.get(name) || { type: ValueType.Void };
+        if (this.values.has(name)) return this.values.get(name)!;
+        if (this.parent) return this.parent.get(name);
+        return { type: ValueType.Void };
     }
 
     set(name: string, val: Value): void {

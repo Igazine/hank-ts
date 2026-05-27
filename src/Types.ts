@@ -4,22 +4,25 @@ export enum ValueType {
     String,
     Array,
     Object,
-    Regex,
+    Opaque,
     Task
 }
 
-export type Value = 
-    | { type: ValueType.Void }
-    | { type: ValueType.Number, value: number }
-    | { type: ValueType.String, value: string }
-    | { type: ValueType.Array, value: Value[] }
-    | { type: ValueType.Object, value: Map<string, Value> }
-    | { type: ValueType.Regex, pattern: string, flags: string, engine?: RegExp }
-    | { type: ValueType.Task, task: TaskValue };
+export interface Value {
+    type: ValueType;
+    value?: any;
+    label?: string; // For Opaque
+    task?: TaskValue;
+}
 
-export type TaskValue = 
-    | { isNative: true, name: string, func: NativeFunc }
-    | { isNative: false, params: Param[], body: Expr, closure: Scope }; // <--- ADDED: Lexical scope capture
+export interface TaskValue {
+    isNative: boolean;
+    name: string;
+    params?: Param[];
+    body?: Expr;
+    closure?: Scope;
+    native?: NativeFunc;
+}
 
 export interface Param {
     name: string;
@@ -30,9 +33,8 @@ export interface Param {
 export type NativeFunc = (args: Value[], ctx: ExecutionContext) => Value;
 
 export interface ExecutionContext {
-    parse(source: string): Expr;
-    eval(node: Expr): Value;
     call(task: Value, args: Value[]): Value;
+    eval(node: Expr): Value;
     scope: Scope;
 }
 
@@ -42,7 +44,7 @@ export interface Scope {
     exists(name: string): boolean;
 }
 
-export type Expr = 
+export type Expr =
     | { kind: 'Block', stmts: Expr[], td: TokenData }
     | { kind: 'Assign', name: string, value: Expr, td: TokenData }
     | { kind: 'Literal', value: Value, td: TokenData }

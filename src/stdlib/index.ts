@@ -13,7 +13,7 @@ export const StdLib = {
                 case ValueType.Void: return 'null';
                 case ValueType.Array: return '[Array]';
                 case ValueType.Object: return '{Object}';
-                case ValueType.Regex: return '[Regex]';
+                case ValueType.Opaque: return `[Opaque:${v.label || 'Unknown'}]`;
                 case ValueType.Task: return '[Task]';
                 default: return 'null';
             }
@@ -37,11 +37,12 @@ export const StdLib = {
             switch (v.type) {
                 case ValueType.Number: return v.value;
                 case ValueType.String: return v.value;
-                case ValueType.Array: return (v as any).value.map((i: any) => mapHalToAny(i));
+                case ValueType.Array: return v.value.map((i: any) => mapHalToAny(i));
                 case ValueType.Object:
                     const obj: any = {};
                     (v as any).value.forEach((val: any, k: any) => { obj[k] = mapHalToAny(val); });
                     return obj;
+                case ValueType.Opaque: return null; // Non-serializable
                 default: return null;
             }
         };
@@ -126,8 +127,8 @@ export const StdLib = {
                         items.forEach((item, idx) => {
                             const callArgs = [item, { type: ValueType.Number, value: idx }];
                             const task = args[1];
-                            if (task.type === ValueType.Task && !task.task.isNative) {
-                                if (callArgs.length > task.task.params.length) callArgs.splice(task.task.params.length);
+                            if (task.type === ValueType.Task && !task.task!.isNative) {
+                                if (callArgs.length > task.task!.params!.length) callArgs.splice(task.task!.params!.length);
                             }
                             ctx.call(args[1], callArgs);
                         });
@@ -145,7 +146,17 @@ export const StdLib = {
                     if (args.length === 0) return { type: ValueType.Void };
                     try { return mapAnyToHal(JSON.parse(valToString(args[0]))); } catch (e) { return { type: ValueType.Void }; }
                 },
-                stringify: (args) => (args.length > 0) ? { type: ValueType.String, value: JSON.stringify(mapHalToAny(args[0])) } : { type: ValueType.Void }
+                stringify: (args) => {
+                    if (args.length === 0) return { type: ValueType.Void };
+                    const checkOpaque = (val: Value): boolean => {
+                        if (val.type === ValueType.Opaque) return true;
+                        if (val.type === ValueType.Array) return val.value.some((i: any) => checkOpaque(i));
+                        if (val.type === ValueType.Object) return Array.from(val.value.values()).some((v: any) => checkOpaque(v));
+                        return false;
+                    };
+                    if (checkOpaque(args[0])) return { type: ValueType.Void };
+                    try { return { type: ValueType.String, value: JSON.stringify(mapHalToAny(args[0])) }; } catch (e) { return { type: ValueType.Void }; }
+                }
             },
             regex: {
                 parse: (args) => {
@@ -155,13 +166,13 @@ export const StdLib = {
                     let jsFlags = "";
                     if (flags.includes('i')) jsFlags += "i";
                     if (flags.includes('m')) jsFlags += "m";
-                    try { return { type: ValueType.Regex, pattern, flags, engine: new RegExp(pattern, jsFlags) }; } catch (e) { return { type: ValueType.Void }; }
+                    try { return { type: ValueType.Opaque, label: 'RegExp', value: new RegExp(pattern, jsFlags) }; } catch (e) { return { type: ValueType.Void }; }
                 },
                 match: (args) => {
                     if (args.length < 2) return { type: ValueType.Void };
                     const s = valToString(args[0]);
                     const pattern = args[1];
-                    if (pattern.type === ValueType.Regex) return pattern.engine?.test(s) ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void };
+                    if (pattern.type === ValueType.Opaque && pattern.label === 'RegExp') return pattern.value.test(s) ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void };
                     return s.includes(valToString(pattern)) ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void };
                 },
                 replace: (args) => {
@@ -169,7 +180,7 @@ export const StdLib = {
                     const s = valToString(args[0]);
                     const pattern = args[1];
                     const repl = valToString(args[2]);
-                    if (pattern.type === ValueType.Regex && pattern.engine) return { type: ValueType.String, value: s.replace(pattern.engine, repl) };
+                    if (pattern.type === ValueType.Opaque && pattern.label === 'RegExp') return { type: ValueType.String, value: s.replace(pattern.value, repl) };
                     return { type: ValueType.String, value: s.split(valToString(pattern)).join(repl) };
                 }
             }

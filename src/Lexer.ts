@@ -4,7 +4,6 @@ export enum TokenType {
     Identifier,
     Number,
     String,
-    Regex,
     
     Assign,    // =
     Question,  // ?
@@ -68,11 +67,6 @@ export class Lexer {
                 continue;
             }
 
-            if (char === '/' && this.isRegexStart()) {
-                this.readRegex();
-                continue;
-            }
-
             if (char === '-' && /[0-9]/.test(this.input[this.pos + 1] || '')) {
                 this.readNumber();
                 continue;
@@ -88,7 +82,7 @@ export class Lexer {
                 continue;
             }
 
-            if (char === '"' || char === "'") {
+            if (char === '"' || char ==="'") {
                 this.readString(char);
                 continue;
             }
@@ -132,42 +126,6 @@ export class Lexer {
         while (this.pos < this.input.length && this.input[this.pos] !== '\n') {
             this.pos++;
         }
-    }
-
-    private isRegexStart(): boolean {
-        if (this.tokens.length === 0) return true;
-        const last = this.tokens[this.tokens.length - 1];
-        switch (last.type) {
-            case TokenType.Assign:
-            case TokenType.Question:
-            case TokenType.Colon:
-            case TokenType.Comma:
-            case TokenType.LParen:
-            case TokenType.LBracket:
-            case TokenType.LBrace:
-            case TokenType.Newline:
-            case TokenType.Not:
-                return true;
-        }
-        return false;
-    }
-
-    private readRegex() {
-        const start = this.pos;
-        this.pos++; // skip /
-        while (this.pos < this.input.length && this.input[this.pos] !== '/') {
-            if (this.input[this.pos] === '\\') this.pos += 2;
-            else this.pos++;
-        }
-        if (this.pos >= this.input.length) {
-            this.addToken(TokenType.Error, 'Unclosed regex literal');
-            return;
-        }
-        this.pos++; // skip /
-        while (this.pos < this.input.length && /[a-zA-Z]/.test(this.input[this.pos])) {
-            this.pos++;
-        }
-        this.addToken(TokenType.Regex, this.input.substring(start, this.pos));
     }
 
     private readNumber() {

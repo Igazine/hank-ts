@@ -17,38 +17,24 @@ export class Parser {
         const tdRoot = this.peekTd();
         const stmts: Expr[] = [];
 
-        // { MacroInclude }
         while (!this.isEof()) {
             this.skipNewlines();
-            if (this.peek().type !== TokenType.At) break;
-            stmts.push(this.parseInclude());
+            if (this.isEof()) break;
+
+            if (this.peek().type === TokenType.LParen && this.isFuncDefStart()) {
+                const func = this.parseFuncDef();
+                if (stmts.length === 0) {
+                    this.skipNewlines();
+                    if (this.isEof()) return func;
+                }
+                stmts.push(func);
+            } else {
+                stmts.push(this.parseStatement());
+            }
+            this.skipNewlines();
         }
 
-        this.skipNewlines();
-        if (this.isEof()) {
-            throw this.error("Script must conclude with a FuncDef or a bare Block");
-        }
-
-        // ( FuncDef | Block )
-        const tdTask = this.peekTd();
-        let task: Expr;
-        const t = this.peek();
-        if (t.type === TokenType.LParen) {
-            task = this.parseFuncDef();
-        } else if (t.type === TokenType.LBrace) {
-            const body = this.parseBlock();
-            task = { kind: 'FuncDef', params: [], body, td: tdTask };
-        } else {
-            throw this.error("Script must conclude with a FuncDef or a bare Block");
-        }
-
-        stmts.push(task);
-
-        this.skipNewlines();
-        if (!this.isEof()) {
-            throw this.error("Unexpected content after script task definition");
-        }
-
+        if (stmts.length === 1) return stmts[0];
         return { kind: 'Block', stmts, td: tdRoot };
     }
 
@@ -101,7 +87,24 @@ export class Parser {
     }
 
     private parseExpression(): Expr {
-        return this.parsePrimary();
+        return this.parseAssignment();
+    }
+
+    private parseAssignment(): Expr {
+        const expr = this.parsePrimary();
+
+        if (this.peek().type === TokenType.Assign) {
+            if (expr.kind === 'Ident' && !expr.isCore) {
+                const t = this.consume(TokenType.Assign);
+                const td: TokenData = { line: t.line, lineText: t.lineText };
+                const value = this.parseExpression();
+                return { kind: 'Assign', name: expr.name, value, td };
+            } else {
+                throw this.error("Invalid assignment target");
+            }
+        }
+
+        return expr;
     }
 
     private parsePrimary(): Expr {
@@ -110,6 +113,9 @@ export class Parser {
         let expr: Expr;
 
         switch (t.type) {
+            case TokenType.At:
+                expr = this.parseInclude();
+                break;
             case TokenType.LParen:
                 if (this.isFuncDefStart()) {
                     expr = this.parseFuncDef();
@@ -119,15 +125,17 @@ export class Parser {
                     this.consume(TokenType.RParen);
                 }
                 break;
-            case TokenType.LBrace: expr = this.parseObjectLiteral(); break;
+            case TokenType.LBrace: 
+                if (this.isObjectLiteral()) {
+                    expr = this.parseObjectLiteral();
+                } else {
+                    expr = this.parseBlock();
+                }
+                break;
             case TokenType.LBracket: expr = this.parseArrayLiteral(); break;
             case TokenType.Not:
                 this.pos++;
                 expr = { kind: 'UnOp', op: '!', target: this.parsePrimary(), td };
-                break;
-            case TokenType.Question:
-                this.pos++;
-                expr = { kind: 'UnOp', op: '?', target: this.parsePrimary(), td };
                 break;
             case TokenType.Hash:
                 this.pos++;
@@ -135,10 +143,6 @@ export class Parser {
                 break;
             case TokenType.Identifier:
                 const name = this.consumeIdentifier();
-                if (this.peek().type === TokenType.Assign) {
-                    this.consume(TokenType.Assign);
-                    return { kind: 'Assign', name, value: this.parseExpression(), td };
-                }
                 expr = { kind: 'Ident', name, isCore: false, td };
                 break;
             case TokenType.String:
@@ -149,12 +153,11 @@ export class Parser {
                 this.pos++;
                 expr = { kind: 'Literal', value: { type: ValueType.Number, value: parseFloat(t.literal) }, td };
                 break;
-            case TokenType.Regex:
-                this.pos++;
-                expr = { kind: 'Literal', value: this.parseRegexValue(t.literal), td };
+            case TokenType.Caret:
+                expr = this.parseReturn();
                 break;
             default:
-                throw this.error(`Unexpected token: ${TokenType[t.type]}`);
+                throw this.error(`Unexpected token: ${TokenType[t.type]} (${t.literal})`);
         }
 
         return this.finishPrimary(expr);
@@ -231,6 +234,19 @@ export class Parser {
         return { kind: 'Block', stmts, td };
     }
 
+    private isObjectLiteral(): boolean {
+        let p = this.pos + 1;
+        while (p < this.tokens.length && this.tokens[p].type === TokenType.Newline) p++;
+        if (p >= this.tokens.length) return false;
+        if (this.tokens[p].type === TokenType.RBrace) return true;
+        if (this.tokens[p].type === TokenType.Identifier) {
+            let next = p + 1;
+            while (next < this.tokens.length && this.tokens[next].type === TokenType.Newline) next++;
+            return next < this.tokens.length && this.tokens[next].type === TokenType.Colon;
+        }
+        return false;
+    }
+
     private parseObjectLiteral(): Expr {
         const t = this.consume(TokenType.LBrace);
         const td: TokenData = { line: t.line, lineText: t.lineText };
@@ -285,7 +301,7 @@ export class Parser {
         const t = this.consume(TokenType.Caret);
         const td: TokenData = { line: t.line, lineText: t.lineText };
         let val: Expr = { kind: 'Literal', value: { type: ValueType.Void }, td };
-        if (!this.isEof() && ![TokenType.Newline, TokenType.RBrace, TokenType.RBracket, TokenType.Comma].includes(this.peek().type)) {
+        if (!this.isEof() && ![TokenType.Newline, TokenType.RBrace, TokenType.RBracket, TokenType.Comma, TokenType.RParen].includes(this.peek().type)) {
             val = this.parseExpression();
         }
         return { kind: 'UnOp', op: '^', target: val, td };
@@ -309,27 +325,9 @@ export class Parser {
         const lexer = new Lexer(content);
         const subParser = new Parser(lexer.tokenize(), rawPath, this.macroMap);
         
-        // Everything is a Task now
         const taskAst = subParser.parse();
         
         return { kind: 'Assign', name: taskName, value: taskAst, td };
-    }
-
-    private parseRegexValue(lit: string): Value {
-        const lastSlash = lit.lastIndexOf('/');
-        const pattern = lit.substring(1, lastSlash);
-        const flags = lit.substring(lastSlash + 1);
-        
-        let jsFlags = '';
-        if (flags.includes('i')) jsFlags += 'i';
-        if (flags.includes('m')) jsFlags += 'm';
-
-        return {
-            type: ValueType.Regex,
-            pattern,
-            flags,
-            engine: new RegExp(pattern, jsFlags)
-        };
     }
 
     private consumeIdentifier(): string {

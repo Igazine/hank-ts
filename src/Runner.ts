@@ -1,5 +1,5 @@
-import { Interpreter, EvalResult, HALScope } from './Interpreter.js';
-import { Lexer } from './Lexer.js';
+import { Interpreter, HALScope } from './Interpreter.js';
+import { Lexer, TokenType } from './Lexer.js';
 import { Parser } from './Parser.js';
 import { Value, ValueType, Scope, NativeFunc, Expr } from './Types.js';
 
@@ -31,10 +31,10 @@ export abstract class Runner {
      */
     registerModule(name: string, tasks: Record<string, NativeFunc>) {
         const moduleObj = new Map<string, Value>();
-        for (const [tName, func] of Object.entries(tasks)) {
+        for (const [tName, native] of Object.entries(tasks)) {
             moduleObj.set(tName, {
                 type: ValueType.Task,
-                task: { isNative: true, name: `${name}.${tName}`, func }
+                task: { isNative: true, name: `${name}.${tName}`, native }
             });
         }
         this.coreScope.set(name, { type: ValueType.Object, value: moduleObj });
@@ -83,9 +83,7 @@ export abstract class Runner {
             throw new Error("HAL Error: Script must evaluate to a Task definition.");
         }
 
-        const res = interpreter.call(scriptTask, args, interpreter.globalScope);
-        if (res.kind === 'Error') throw new Error(res.message);
-        return res.value;
+        return interpreter.call(scriptTask, args);
     }
 
     private preprocess(filePath: string, stack: string[]) {
@@ -109,9 +107,11 @@ export abstract class Runner {
         const tokens = lexer.tokenize();
         const macros: string[] = [];
         for (let i = 0; i < tokens.length - 1; i++) {
-            if (tokens[i].type === 8) { // TokenType.At
+            if (tokens[i].type === TokenType.At) {
                 const next = tokens[i + 1];
-                if (next.type === 0 || next.type === 2) macros.push(next.literal);
+                if (next.type === TokenType.Identifier || next.type === TokenType.String) {
+                    macros.push(next.literal);
+                }
             }
         }
         return macros;
