@@ -1,13 +1,13 @@
-# HAL for TypeScript
+# Hank for TypeScript
 
-A TypeScript implementation of the Hybrid Automation Language (HAL).
+A TypeScript implementation of the Hank language.
 
-This repository provides a reusable, environment-agnostic library (`@igazine/hal`) for embedding the HAL interpreter into Node.js, Deno, Bun, or Browser applications.
+This repository provides a reusable, environment-agnostic library (`hank`) for embedding the Hank interpreter into Node.js, Deno, Bun, or Browser applications.
 
 ## Installation
 
 ```bash
-npm install https://github.com/Igazine/hal-ts.git
+npm install https://github.com/Igazine/hank-ts.git
 ```
 
 ## Features
@@ -15,7 +15,7 @@ npm install https://github.com/Igazine/hal-ts.git
 - **Environment Agnostic**: The core library has zero dependencies on Node.js APIs.
 - **AST Caching**: Eliminates parsing overhead for repeated execution.
 - **Universal Parity**: Bit-perfect execution parity with Go, Rust, and Haxe implementations.
-- **Standard Library**: Full support for the official HAL Standard Library.
+- **Standard Library**: Full support for the official Hank Standard Library.
 
 ## Example Runner
 
@@ -36,8 +36,8 @@ An example Node.js CLI runner is included in `examples/runner`. To run the confo
 
 ## Project Links
 
-- **HAL Core Repo**: [Igazine/hal](https://github.com/Igazine/hal)
-- **Official Documentation**: [https://igazine.github.io/hal/](https://igazine.github.io/hal/)
+- **Hank Core Repo**: [Igazine/hank](https://github.com/Igazine/hank)
+- **Official Documentation**: [https://igazine.github.io/hank/](https://igazine.github.io/hank/)
 
 ## License
 
