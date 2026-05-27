@@ -10,7 +10,7 @@ export const StdLib = {
             switch (v.type) {
                 case ValueType.String: return v.value;
                 case ValueType.Number: return v.value.toString();
-                case ValueType.Void: return 'null';
+                case ValueType.Void: return 'Void';
                 case ValueType.Array: return '[Array]';
                 case ValueType.Object: return '{Object}';
                 case ValueType.Opaque: return `[Opaque:${v.label || 'Unknown'}]`;
