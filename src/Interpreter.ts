@@ -62,7 +62,7 @@ export class Interpreter implements ExecutionContext {
             case 'FuncCall':
                 const target = this.evalInScope(node.target, scope);
                 const args = node.args.map(a => this.evalInScope(a, scope));
-                return this.call(target, args);
+                return this.internalCall(target, args);
             case 'Field':
                 const obj = this.evalInScope(node.object, scope);
                 if (obj.type === ValueType.Object) {
@@ -117,7 +117,17 @@ export class Interpreter implements ExecutionContext {
         }
     }
 
-    call(task: Value, args: Value[]): Value {
+    public call(task: Value, args: Value[]): Value {
+        let finalArgs = args;
+        if (task.type === ValueType.Task && task.task && !task.task.isNative && task.task.params) {
+            if (args.length > task.task.params.length) {
+                finalArgs = args.slice(0, task.task.params.length);
+            }
+        }
+        return this.internalCall(task, finalArgs);
+    }
+
+    private internalCall(task: Value, args: Value[]): Value {
         if (task.type !== ValueType.Task || !task.task) {
             throw new Error(`Target is not a function: ${this.valToString(task)}`);
         }
