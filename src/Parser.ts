@@ -14,28 +14,36 @@ export class Parser {
     }
 
     parse(): Expr {
-        const tdRoot = this.peekTd();
+        this.skipNewlines();
         const stmts: Expr[] = [];
 
-        while (!this.isEof()) {
-            this.skipNewlines();
-            if (this.isEof()) break;
-
-            if (this.peek().type === TokenType.LParen && this.isFuncDefStart()) {
-                const func = this.parseFuncDef();
-                if (stmts.length === 0) {
-                    this.skipNewlines();
-                    if (this.isEof()) return func;
-                }
-                stmts.push(func);
-            } else {
-                stmts.push(this.parseStatement());
-            }
+        // 1. Consume Macro Includes
+        while (!this.isEof() && this.peek().type === TokenType.At) {
+            stmts.push(this.parseInclude());
             this.skipNewlines();
         }
 
+        if (this.isEof()) throw new Error("Syntax Error: Script is empty.");
+
+        // 2. Parse exactly ONE TaskDef (FuncDef or Block)
+        let mainTask: Expr;
+        if (this.peek().type === TokenType.LParen && this.isFuncDefStart()) {
+            mainTask = this.parseFuncDef();
+        } else if (this.peek().type === TokenType.LBrace) {
+            mainTask = this.parseBlock();
+        } else {
+            throw new Error("Syntax Error: Expected main task definition (a closure or a block).");
+        }
+        stmts.push(mainTask);
+
+        // 3. Assert EOF
+        this.skipNewlines();
+        if (!this.isEof()) {
+            throw new Error("Syntax Error: Unexpected code outside of main task. A Hank script must contain exactly one Task definition.");
+        }
+
         if (stmts.length === 1) return stmts[0];
-        return { kind: 'Block', stmts, td: tdRoot };
+        return { kind: 'Block', stmts, td: this.getTd(stmts[0]) };
     }
 
     private parseStatement(): Expr {
