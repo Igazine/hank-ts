@@ -322,7 +322,7 @@ export class Parser {
         if (this.peek().type === TokenType.String) {
             rawPath = this.consume(TokenType.String).literal;
         } else {
-            rawPath = this.consumeIdentifier();
+            throw new Error("Syntax Error: The '@' macro strictly requires a string literal path (e.g., @ \"utils\"). Identifier shorthand is not allowed.");
         }
 
         const content = this.macroMap.get(rawPath);
