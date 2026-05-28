@@ -1,4 +1,4 @@
-import { Interpreter, HALScope } from './Interpreter.js';
+import { Interpreter, HankScope } from './Interpreter.js';
 import { Lexer, TokenType } from './Lexer.js';
 import { Parser } from './Parser.js';
 import { Value, ValueType, Scope, NativeFunc, Expr } from './Types.js';
@@ -12,7 +12,7 @@ export abstract class Runner {
     private pathCache: Map<string, string> = new Map();
     private astCache: Map<string, Expr> = new Map();
     private macroMap: Map<string, string> = new Map();
-    public coreScope: Scope = new HALScope();
+    public coreScope: Scope = new HankScope();
 
     constructor() {}
 

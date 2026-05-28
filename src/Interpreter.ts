@@ -6,7 +6,7 @@ export class Interpreter implements ExecutionContext {
 
     constructor(parentScope: Scope | undefined, coreScope: Scope) {
         this.coreScope = coreScope;
-        this.globalScope = new HALScope(parentScope || coreScope);
+        this.globalScope = new HankScope(parentScope || coreScope);
     }
 
     run(ast: Expr): Value {
@@ -101,7 +101,7 @@ export class Interpreter implements ExecutionContext {
                         return this.evalInScope(node.success, scope);
                     } catch (e: any) {
                         if (node.rescue) {
-                            const rescueScope = new HALScope(scope);
+                            const rescueScope = new HankScope(scope);
                             if (node.catchVar) {
                                 rescueScope.set(node.catchVar, { type: ValueType.String, value: e.message || String(e) });
                             }
@@ -138,7 +138,7 @@ export class Interpreter implements ExecutionContext {
             const t = task.task;
             if (args.length > t.params!.length) throw new Error("Too many arguments");
 
-            const callScope = new HALScope(t.closure);
+            const callScope = new HankScope(t.closure);
             for (let i = 0; i < t.params!.length; i++) {
                 const p = t.params![i];
                 let val: Value = { type: ValueType.Void };
@@ -178,7 +178,7 @@ export class Interpreter implements ExecutionContext {
     }
 }
 
-export class HALScope implements Scope {
+export class HankScope implements Scope {
     private values: Map<string, Value> = new Map();
     private parent: Scope | undefined;
 

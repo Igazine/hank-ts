@@ -62,6 +62,6 @@ export interface TokenData {
     lineText: string;
 }
 
-export interface IHALSerializable {
-    serializeHAL(): string;
+export interface IHankSerializable {
+    serializeHank(): string;
 }
