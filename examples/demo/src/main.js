@@ -1,41 +1,21 @@
-import { ValueType, Runner, StdLib } from '@igazine/hal';
+import { ValueType, Runner, StdLib } from '../../../src/index.js';
+import { FileResource } from './FileResource.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as cp from 'node:child_process';
-class DemoRunner extends Runner {
-    readFile(p) {
-        return fs.readFileSync(p, 'utf-8');
-    }
-    resolvePath(m, baseFile) {
-        if (path.isAbsolute(m))
-            return m;
-        // baseFile is the full path of the script currently being processed
-        const baseDir = baseFile === '' ? process.cwd() : path.dirname(baseFile);
-        let joined = path.resolve(baseDir, m);
-        if (!path.extname(joined)) {
-            if (fs.existsSync(joined + '.hal'))
-                return joined + '.hal';
-        }
-        return joined;
-    }
-}
+import * as os from 'node:os';
 async function main() {
     const args = process.argv.slice(2);
-    const runner = new DemoRunner();
-    // 1. Register Standard Library modules manually (Optional)
-    const std = StdLib.getModules();
-    for (const [name, tasks] of Object.entries(std)) {
-        runner.registerModule(name, tasks);
-    }
-    // 2. Register Example SYSLIB modules
-    registerSyslib(runner);
+    const runner = createRunner();
     if (args.length === 0) {
         await runConformance(runner);
         return;
     }
-    const halArgs = args.slice(1).map(a => ({ type: ValueType.String, value: a }));
+    const scriptPath = path.isAbsolute(args[0]) ? args[0] : path.resolve(process.cwd(), args[0]);
+    const resource = FileResource.create(scriptPath);
+    const hankArgs = args.slice(1).map(a => ({ type: ValueType.String, value: a }));
     try {
-        const val = runner.run(args[0], halArgs);
+        const val = await runner.run(resource, hankArgs);
         if (val.type === ValueType.Number) {
             process.exit(val.value);
         }
@@ -46,22 +26,35 @@ async function main() {
         process.exit(1);
     }
 }
+function createRunner() {
+    const runner = new Runner();
+    // 1. Register Standard Library modules manually
+    const std = StdLib.getModules();
+    for (const [name, tasks] of Object.entries(std)) {
+        runner.registerModule(name, tasks);
+    }
+    // 2. Register Example SYSLIB modules
+    registerSyslib(runner);
+    return runner;
+}
 function registerSyslib(runner) {
     runner.registerModule('os', {
         type: () => ({ type: ValueType.String, value: process.platform }),
         name: () => ({ type: ValueType.String, value: process.platform }),
-        arch: () => ({ type: ValueType.String, value: process.arch })
+        arch: () => ({ type: ValueType.String, value: process.arch }),
+        memory: () => {
+            const map = new Map();
+            map.set('total', { type: ValueType.Number, value: os.totalmem() });
+            map.set('free', { type: ValueType.Number, value: os.freemem() });
+            map.set('used', { type: ValueType.Number, value: os.totalmem() - os.freemem() });
+            return { type: ValueType.Object, value: map };
+        },
+        cpu: () => ({ type: ValueType.Number, value: os.loadavg()[0] })
     });
     runner.registerModule('host', {
         cwd: () => ({ type: ValueType.String, value: process.cwd() }),
         pid: () => ({ type: ValueType.Number, value: process.pid }),
-        isRoot: () => (process.getuid?.() === 0 ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void }),
-        signal: (args) => {
-            if (args.length > 0) {
-                console.log(`[SIGNAL] ${args[0].value || 'null'}`);
-            }
-            return { type: ValueType.Void };
-        }
+        isRoot: () => (process.getuid?.() === 0 ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void })
     });
     runner.registerModule('fs', {
         exists: (args) => {
@@ -137,28 +130,36 @@ function registerSyslib(runner) {
 }
 async function runConformance(runner) {
     const root = process.cwd();
-    const workspaceRoot = path.resolve(root, '../../vendor/hal');
+    let workspaceRoot = path.resolve(root, 'vendor/hank');
+    if (!fs.existsSync(workspaceRoot)) {
+        workspaceRoot = path.resolve(root, '../../vendor/hank');
+    }
     const tests = [
-        'test/conformance/01_literals.hal',
-        'test/conformance/02_gates.hal',
-        'test/conformance/03_scoping.hal',
-        'test/conformance/04_hoisting.hal',
-        'test/conformance/05_params.hal',
-        'test/conformance/06_macros.hal',
-        'test/conformance/07_returns.hal',
-        'test/conformance/08_host_args.hal',
-        'test/conformance/09_deep_nesting.hal',
-        'test/conformance/10_edge_cases.hal',
-        'test/conformance/11_regex_parse.hal',
-        'test/conformance/12_data_advanced.hal',
-        'test/conformance/13_logic_module.hal',
+        'test/conformance/01_literals.hank',
+        'test/conformance/02_gates.hank',
+        'test/conformance/03_scoping.hank',
+        'test/conformance/04_hoisting.hank',
+        'test/conformance/05_params.hank',
+        'test/conformance/06_macros.hank',
+        'test/conformance/07_returns.hank',
+        'test/conformance/08_host_args.hank',
+        'test/conformance/09_deep_nesting.hank',
+        'test/conformance/10_edge_cases.hank',
+        'test/conformance/11_regex_parse.hank',
+        'test/conformance/12_data_advanced.hank',
+        'test/conformance/13_logic_module.hank',
+        'test/conformance/14_syslib_hank.hank',
+        'test/conformance/15_logic_eq.hank',
+        'test/conformance/16_chained_assign.hank',
+        'test/conformance/17_num_module.hank',
     ];
     for (const t of tests) {
         console.log(`--- Running: ${t} ---`);
         const fullPath = path.join(workspaceRoot, t);
-        const args = t.endsWith('08_host_args.hal') ? [{ type: ValueType.String, value: 'Tamas' }] : [];
+        const resource = FileResource.create(fullPath);
+        const args = t.endsWith('08_host_args.hank') ? [{ type: ValueType.String, value: 'Tamas' }] : [];
         try {
-            runner.run(fullPath, args);
+            await runner.run(resource, args);
         }
         catch (e) {
             console.log(`Test Failed: ${e.message || e}`);

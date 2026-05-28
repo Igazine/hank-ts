@@ -1,27 +1,23 @@
-import { Expr, Param, Scope, TokenData, Value, ValueType, ExecutionContext } from './Types.js';
-
-export class Interpreter implements ExecutionContext {
-    public globalScope: Scope;
-    private coreScope: Scope;
-
-    constructor(parentScope: Scope | undefined, coreScope: Scope) {
+import { ValueType } from './Types.js';
+export class Interpreter {
+    globalScope;
+    coreScope;
+    constructor(parentScope, coreScope) {
         this.coreScope = coreScope;
         this.globalScope = new HankScope(parentScope || coreScope);
     }
-
-    run(ast: Expr): Value {
+    run(ast) {
         return this.eval(ast);
     }
-
-    eval(node: Expr): Value {
+    eval(node) {
         return this.evalInScope(node, this.globalScope);
     }
-
-    private evalInScope(node: Expr, scope: Scope): Value {
+    evalInScope(node, scope) {
         switch (node.kind) {
             case 'Literal': return node.value;
             case 'Ident':
-                if (node.isCore) return this.coreScope.get(node.name);
+                if (node.isCore)
+                    return this.coreScope.get(node.name);
                 return scope.get(node.name);
             case 'Assign':
                 const val = this.evalInScope(node.value, scope);
@@ -33,7 +29,8 @@ export class Interpreter implements ExecutionContext {
                     if (stmt.kind === 'Assign') {
                         if (stmt.value.kind === 'FuncDef') {
                             scope.set(stmt.name, this.evalInScope(stmt.value, scope));
-                        } else if (stmt.value.kind === 'Assign') {
+                        }
+                        else if (stmt.value.kind === 'Assign') {
                             const inner = stmt.value;
                             if (inner.value.kind === 'FuncDef') {
                                 scope.set(inner.name, this.evalInScope(inner.value, scope));
@@ -41,19 +38,21 @@ export class Interpreter implements ExecutionContext {
                         }
                     }
                 }
-
-                let last: Value = { type: ValueType.Void };
+                let last = { type: ValueType.Void };
                 for (const stmt of node.stmts) {
                     // Skip already hoisted tasks in eval pass
                     if (stmt.kind === 'Assign') {
-                        if (stmt.value.kind === 'FuncDef') continue;
+                        if (stmt.value.kind === 'FuncDef')
+                            continue;
                         if (stmt.value.kind === 'Assign') {
                             const inner = stmt.value;
-                            if (inner.value.kind === 'FuncDef') continue;
+                            if (inner.value.kind === 'FuncDef')
+                                continue;
                         }
                     }
                     last = this.evalInScope(stmt, scope);
-                    if (last.type === ValueType.Void && last.value === '_RETURN_') return last;
+                    if (last.type === ValueType.Void && last.value === '_RETURN_')
+                        return last;
                 }
                 return last;
             case 'FuncDef':
@@ -77,14 +76,16 @@ export class Interpreter implements ExecutionContext {
                     return obj.value.get(node.fieldName) || { type: ValueType.Void };
                 }
                 if (obj.type === ValueType.Array) {
-                    if (node.fieldName === 'length') return { type: ValueType.Number, value: obj.value.length };
+                    if (node.fieldName === 'length')
+                        return { type: ValueType.Number, value: obj.value.length };
                 }
                 if (obj.type === ValueType.String) {
-                    if (node.fieldName === 'length') return { type: ValueType.Number, value: obj.value.length };
+                    if (node.fieldName === 'length')
+                        return { type: ValueType.Number, value: obj.value.length };
                 }
                 return { type: ValueType.Void };
             case 'Object':
-                const fields = new Map<string, Value>();
+                const fields = new Map();
                 node.fields.forEach((expr, key) => {
                     fields.set(key, this.evalInScope(expr, scope));
                 });
@@ -107,7 +108,8 @@ export class Interpreter implements ExecutionContext {
                 if (isTruthy) {
                     try {
                         return this.evalInScope(node.success, scope);
-                    } catch (e: any) {
+                    }
+                    catch (e) {
                         if (node.rescue) {
                             const rescueScope = new HankScope(scope);
                             if (node.catchVar) {
@@ -117,15 +119,15 @@ export class Interpreter implements ExecutionContext {
                         }
                         throw e;
                     }
-                } else if (node.fallback) {
+                }
+                else if (node.fallback) {
                     return this.evalInScope(node.fallback, scope);
                 }
                 return { type: ValueType.Void };
             default: return { type: ValueType.Void };
         }
     }
-
-    public call(task: Value, args: Value[]): Value {
+    call(task, args) {
         let finalArgs = args;
         if (task.type === ValueType.Task && task.task && !task.task.isNative && task.task.params) {
             if (args.length > task.task.params.length) {
@@ -134,45 +136,43 @@ export class Interpreter implements ExecutionContext {
         }
         return this.internalCall(task, finalArgs);
     }
-
-    private internalCall(task: Value, args: Value[]): Value {
+    internalCall(task, args) {
         if (task.type !== ValueType.Task || !task.task) {
             throw new Error(`Target is not a function: ${this.valToString(task)}`);
         }
-
         if (task.task.isNative) {
-            return task.task.native!(args, this);
-        } else {
+            return task.task.native(args, this);
+        }
+        else {
             const t = task.task;
-            if (args.length > t.params!.length) throw new Error("Too many arguments");
-
+            if (args.length > t.params.length)
+                throw new Error("Too many arguments");
             const callScope = new HankScope(t.closure);
-            for (let i = 0; i < t.params!.length; i++) {
-                const p = t.params![i];
-                let val: Value = { type: ValueType.Void };
+            for (let i = 0; i < t.params.length; i++) {
+                const p = t.params[i];
+                let val = { type: ValueType.Void };
                 if (i < args.length) {
                     val = args[i];
-                } else if (p.defaultValue) {
+                }
+                else if (p.defaultValue) {
                     val = this.evalInScope(p.defaultValue, callScope);
-                } else if (!p.isOptional) {
+                }
+                else if (!p.isOptional) {
                     throw new Error(`Missing required parameter: ${p.name}`);
                 }
                 callScope.set(p.name, val);
             }
-
-            const res = this.evalInScope(t.body!, callScope);
+            const res = this.evalInScope(t.body, callScope);
             if (res.type === ValueType.Void && res.value === '_RETURN_') {
-                return res.task!.native!([], this);
+                return res.task.native([], this);
             }
             return res;
         }
     }
-
-    get scope(): Scope {
+    get scope() {
         return this.globalScope;
     }
-
-    private valToString(v: Value): string {
+    valToString(v) {
         switch (v.type) {
             case ValueType.String: return v.value;
             case ValueType.Number: return v.value.toString();
@@ -185,26 +185,23 @@ export class Interpreter implements ExecutionContext {
         }
     }
 }
-
-export class HankScope implements Scope {
-    private values: Map<string, Value> = new Map();
-    private parent: Scope | undefined;
-
-    constructor(parent?: Scope) {
+export class HankScope {
+    values = new Map();
+    parent;
+    constructor(parent) {
         this.parent = parent;
     }
-
-    get(name: string): Value {
-        if (this.values.has(name)) return this.values.get(name)!;
-        if (this.parent) return this.parent.get(name);
+    get(name) {
+        if (this.values.has(name))
+            return this.values.get(name);
+        if (this.parent)
+            return this.parent.get(name);
         return { type: ValueType.Void };
     }
-
-    set(name: string, val: Value): void {
+    set(name, val) {
         this.values.set(name, val);
     }
-
-    exists(name: string): boolean {
+    exists(name) {
         return this.values.has(name) || (this.parent?.exists(name) || false);
     }
 }

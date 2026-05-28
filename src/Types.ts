@@ -44,6 +44,31 @@ export interface Scope {
     exists(name: string): boolean;
 }
 
+/**
+ * A base class for all Hank resources.
+ * Encapsulates the unique identity, raw content, and parsed AST of a script.
+ */
+export abstract class Resource {
+    public content: string | null = null;
+    public id: string;
+    public ast: Expr | null = null;
+
+    constructor(id: string) {
+        this.id = id;
+    }
+
+    /**
+     * Fulfills the raw content of the resource from its source.
+     */
+    abstract load(): Promise<void> | void;
+
+    /**
+     * Resolves a relative identifier into a new Resource instance.
+     * @param id The string identifier (e.g., from a @ macro).
+     */
+    abstract resolve(id: string): Resource;
+}
+
 export type Expr =
     | { kind: 'Block', stmts: Expr[], td: TokenData }
     | { kind: 'Assign', name: string, value: Expr, td: TokenData }

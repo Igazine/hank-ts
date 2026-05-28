@@ -1,4 +1,4 @@
-import { Value, ValueType, NativeFunc, ExecutionContext, Scope } from '../Types.js';
+import { Value, ValueType, NativeFunc, Expr, Resource } from '../Types.js';
 
 export const StdLib = {
     /**
@@ -19,35 +19,35 @@ export const StdLib = {
             }
         };
 
-        const mapAnyToHal = (v: any): Value => {
+        const mapAnyToHank = (v: any): Value => {
             if (v === null || v === undefined) return { type: ValueType.Void };
             if (typeof v === 'number') return { type: ValueType.Number, value: v };
             if (typeof v === 'string') return { type: ValueType.String, value: v };
             if (typeof v === 'boolean') return v ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void };
-            if (Array.isArray(v)) return { type: ValueType.Array, value: v.map(i => mapAnyToHal(i)) };
+            if (Array.isArray(v)) return { type: ValueType.Array, value: v.map(i => mapAnyToHank(i)) };
             if (typeof v === 'object') {
                 const map = new Map<string, Value>();
-                for (const [k, val] of Object.entries(v)) map.set(k, mapAnyToHal(val));
+                for (const [k, val] of Object.entries(v)) map.set(k, mapAnyToHank(val));
                 return { type: ValueType.Object, value: map };
             }
             return { type: ValueType.Void };
         };
 
-        const mapHalToAny = (v: Value): any => {
+        const mapHankToAny = (v: Value): any => {
             switch (v.type) {
                 case ValueType.Number: return v.value;
                 case ValueType.String: return v.value;
-                case ValueType.Array: return v.value.map((i: any) => mapHalToAny(i));
+                case ValueType.Array: return v.value.map((i: any) => mapHankToAny(i));
                 case ValueType.Object:
                     const obj: any = {};
-                    (v as any).value.forEach((val: any, k: any) => { obj[k] = mapHalToAny(val); });
+                    (v as any).value.forEach((val: any, k: any) => { obj[k] = mapHankToAny(val); });
                     return obj;
                 case ValueType.Opaque: return null; // Non-serializable
                 default: return null;
             }
         };
 
-        const halEquals = (a: Value, b: Value): boolean => {
+        const hankEquals = (a: Value, b: Value): boolean => {
             if (a.type !== b.type) return false;
             switch (a.type) {
                 case ValueType.Void: return true;
@@ -55,13 +55,13 @@ export const StdLib = {
                 case ValueType.String: return a.value === b.value;
                 case ValueType.Array:
                     if (a.value.length !== b.value.length) return false;
-                    for (let i = 0; i < a.value.length; i++) if (!halEquals(a.value[i], b.value[i])) return false;
+                    for (let i = 0; i < a.value.length; i++) if (!hankEquals(a.value[i], b.value[i])) return false;
                     return true;
                 case ValueType.Object:
                     if (a.value.size !== b.value.size) return false;
                     for (const [k, v1] of a.value) {
                         const v2 = b.value.get(k);
-                        if (!v2 || !halEquals(v1, v2)) return false;
+                        if (!v2 || !hankEquals(v1, v2)) return false;
                     }
                     return true;
                 case ValueType.Opaque: return a.label === b.label && a.value === b.value;
@@ -86,23 +86,6 @@ export const StdLib = {
                 signal: (args) => {
                     if (args.length > 0) console.log(`[SIGNAL] ${valToString(args[0])}`);
                     return { type: ValueType.Void };
-                },
-                sleep: (args) => {
-                    const ms = (args.length > 0 && args[0].type === ValueType.Number) ? (args[0] as any).value : 0;
-                    return new Promise(resolve => setTimeout(() => resolve({ type: ValueType.Void }), ms)) as any;
-                },
-                loop: (args, ctx) => {
-                    if (args.length > 0 && args[0].type === ValueType.Task) {
-                        const task = args[0];
-                        const runLoop = () => {
-                            const res = ctx.call(task, []);
-                            if (res.type === ValueType.Void) {
-                                setTimeout(runLoop, 0);
-                            }
-                        };
-                        runLoop();
-                    }
-                    return { type: ValueType.Void };
                 }
             },
             env: {
@@ -115,11 +98,75 @@ export const StdLib = {
                 format: (args) => {
                     if (args.length === 0) return { type: ValueType.Void };
                     let res = valToString(args[0]);
-                    for (let i = 1; i < args.length; i++) { res = res.replace(`%${i}`, valToString(args[i])); }
+                    for (let i = 1; i < args.length; i++) { 
+                        res = res.split(`%${i}`).join(valToString(args[i])); 
+                    }
                     return { type: ValueType.String, value: res };
                 },
                 concat: (args) => ({ type: ValueType.String, value: args.map(a => valToString(a)).join('') }),
                 trim: (args) => args.length === 0 ? { type: ValueType.Void } : { type: ValueType.String, value: valToString(args[0]).trim() }
+            },
+            num: {
+                parse: (args) => {
+                    if (args.length === 0) return { type: ValueType.Void };
+                    const s = valToString(args[0]);
+                    let base = 0;
+                    if (args.length > 1 && args[1].type === ValueType.Number) base = (args[1] as any).value;
+
+                    if (base === 0) {
+                        if (s.startsWith("0x")) base = 16;
+                        else if (s.startsWith("0b")) base = 2;
+                        else if (s.startsWith("0o")) base = 8;
+                        else base = 10;
+                    }
+
+                    const n = parseInt(s, base);
+                    if (isNaN(n)) {
+                        if (base === 0 || base === 10) {
+                            const f = parseFloat(s);
+                            return isNaN(f) ? { type: ValueType.Void } : { type: ValueType.Number, value: f };
+                        }
+                        return { type: ValueType.Void };
+                    }
+                    return { type: ValueType.Number, value: n };
+                },
+                format: (args) => {
+                    if (args.length === 0 || args[0].type !== ValueType.Number) return { type: ValueType.Void };
+                    const n = (args[0] as any).value;
+                    let base = 10;
+                    if (args.length > 1 && args[1].type === ValueType.Number) base = (args[1] as any).value;
+                    if (base < 2 || base > 36) return { type: ValueType.Void };
+                    return { type: ValueType.String, value: n.toString(base) };
+                },
+                bitAnd: (args) => {
+                    const a = (args.length > 0 && args[0].type === ValueType.Number) ? (args[0] as any).value : 0;
+                    const b = (args.length > 1 && args[1].type === ValueType.Number) ? (args[1] as any).value : 0;
+                    return { type: ValueType.Number, value: Number(BigInt(a) & BigInt(b)) };
+                },
+                bitOr: (args) => {
+                    const a = (args.length > 0 && args[0].type === ValueType.Number) ? (args[0] as any).value : 0;
+                    const b = (args.length > 1 && args[1].type === ValueType.Number) ? (args[1] as any).value : 0;
+                    return { type: ValueType.Number, value: Number(BigInt(a) | BigInt(b)) };
+                },
+                bitXor: (args) => {
+                    const a = (args.length > 0 && args[0].type === ValueType.Number) ? (args[0] as any).value : 0;
+                    const b = (args.length > 1 && args[1].type === ValueType.Number) ? (args[1] as any).value : 0;
+                    return { type: ValueType.Number, value: Number(BigInt(a) ^ BigInt(b)) };
+                },
+                bitNot: (args) => {
+                    const a = (args.length > 0 && args[0].type === ValueType.Number) ? (args[0] as any).value : 0;
+                    return { type: ValueType.Number, value: Number(~BigInt(a)) };
+                },
+                shiftL: (args) => {
+                    const a = (args.length > 0 && args[0].type === ValueType.Number) ? (args[0] as any).value : 0;
+                    const b = (args.length > 1 && args[1].type === ValueType.Number) ? (args[1] as any).value : 0;
+                    return { type: ValueType.Number, value: Number(BigInt(a) << BigInt(b)) };
+                },
+                shiftR: (args) => {
+                    const a = (args.length > 0 && args[0].type === ValueType.Number) ? (args[0] as any).value : 0;
+                    const b = (args.length > 1 && args[1].type === ValueType.Number) ? (args[1] as any).value : 0;
+                    return { type: ValueType.Number, value: Number(BigInt(a) >> BigInt(b)) };
+                }
             },
             math: {
                 add: (args) => ({ type: ValueType.Number, value: args.reduce((sum, a) => sum + (a.type === ValueType.Number ? (a as any).value : 0), 0) }),
@@ -128,7 +175,7 @@ export const StdLib = {
                 div: (args) => (args.length < 2 || args[1].type !== ValueType.Number || (args[1] as any).value === 0) ? { type: ValueType.Void } : { type: ValueType.Number, value: (args[0] as any).value / (args[1] as any).value },
                 gt: (args) => (args.length < 2 || args[0].type !== ValueType.Number || args[1].type !== ValueType.Number) ? { type: ValueType.Void } : ((args[0] as any).value > (args[1] as any).value ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void }),
                 lt: (args) => (args.length < 2 || args[0].type !== ValueType.Number || args[1].type !== ValueType.Number) ? { type: ValueType.Void } : ((args[0] as any).value < (args[1] as any).value ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void }),
-                eq: (args) => (args.length < 2) ? { type: ValueType.Void } : (halEquals(args[0], args[1]) ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void })
+                eq: (args) => (args.length < 2) ? { type: ValueType.Void } : (hankEquals(args[0], args[1]) ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void })
             },
             logic: {
                 and: (args) => {
@@ -141,7 +188,7 @@ export const StdLib = {
                     for (const a of args) { if (a.type !== ValueType.Void) return a; }
                     return { type: ValueType.Void };
                 },
-                eq: (args) => (args.length < 2) ? { type: ValueType.Void } : (halEquals(args[0], args[1]) ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void })
+                eq: (args) => (args.length < 2) ? { type: ValueType.Void } : (hankEquals(args[0], args[1]) ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void })
             },
             arr: {
                 length: (args) => (args.length > 0 && args[0].type === ValueType.Array) ? { type: ValueType.Number, value: (args[0] as any).value.length } : { type: ValueType.Void },
@@ -165,13 +212,12 @@ export const StdLib = {
             },
             obj: {
                 get: (args) => (args.length >= 2 && args[0].type === ValueType.Object) ? ((args[0] as any).value.get(valToString(args[1])) || { type: ValueType.Void }) : { type: ValueType.Void },
-                keys: (args) => (args.length > 0 && args[0].type === ValueType.Object) ? { type: ValueType.Array, value: Array.from((args[0] as any).value.keys()).map(k => ({ type: ValueType.String, value: k } as Value)) } : { type: ValueType.Void },
-                values: (args) => (args.length > 0 && args[0].type === ValueType.Object) ? { type: ValueType.Array, value: Array.from((args[0] as any).value.values()) } : { type: ValueType.Void }
+                keys: (args) => (args.length > 0 && args[0].type === ValueType.Object) ? { type: ValueType.Array, value: Array.from((args[0] as any).value.keys()).map(k => ({ type: ValueType.String, value: k } as Value)) } : { type: ValueType.Void }
             },
             json: {
                 parse: (args) => {
                     if (args.length === 0) return { type: ValueType.Void };
-                    try { return mapAnyToHal(JSON.parse(valToString(args[0]))); } catch (e) { return { type: ValueType.Void }; }
+                    try { return mapAnyToHank(JSON.parse(valToString(args[0]))); } catch (e) { return { type: ValueType.Void }; }
                 },
                 stringify: (args) => {
                     if (args.length === 0) return { type: ValueType.Void };
@@ -182,7 +228,7 @@ export const StdLib = {
                         return false;
                     };
                     if (checkOpaque(args[0])) return { type: ValueType.Void };
-                    try { return { type: ValueType.String, value: JSON.stringify(mapHalToAny(args[0])) }; } catch (e) { return { type: ValueType.Void }; }
+                    try { return { type: ValueType.String, value: JSON.stringify(mapHankToAny(args[0])) }; } catch (e) { return { type: ValueType.Void }; }
                 }
             },
             regex: {
