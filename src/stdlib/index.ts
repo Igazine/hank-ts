@@ -83,6 +83,10 @@ export const StdLib = {
                     return { type: ValueType.Void };
                 },
                 elapsedTime: () => ({ type: ValueType.Number, value: 0 }),
+                signal: (args) => {
+                    if (args.length > 0) console.log(`[SIGNAL] ${valToString(args[0])}`);
+                    return { type: ValueType.Void };
+                },
                 sleep: (args) => {
                     const ms = (args.length > 0 && args[0].type === ValueType.Number) ? (args[0] as any).value : 0;
                     return new Promise(resolve => setTimeout(() => resolve({ type: ValueType.Void }), ms)) as any;
