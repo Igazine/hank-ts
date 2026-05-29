@@ -11,4 +11,4 @@ jobs:
         with:
           node-version: 20
       - run: npm install
-      - run: node examples/demo/index.js
+      - run: cd examples/demo && npm install && node src/main.js
