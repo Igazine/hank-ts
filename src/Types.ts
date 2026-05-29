@@ -91,6 +91,11 @@ export interface IHankSerializable {
     serializeHank(): string;
 }
 
+export interface IHankExtension {
+    readonly name: string;
+    getModules(): Record<string, Record<string, NativeFunc>>;
+}
+
 export enum HankError {
     // Lexical Errors (10xx)
     UnexpectedCharacter = 1001,
@@ -116,7 +121,8 @@ export enum HankError {
     TooManyArguments = 4002,
     MissingRequiredParameter = 4003,
     Halt = 4004,
-    GenericRuntimeError = 4005,
+    BitwiseOutOfBounds = 4005,
+    GenericRuntimeError = 4006,
 }
 
 export class HankErrorValue extends Error {

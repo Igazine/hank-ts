@@ -21,6 +21,7 @@ export const HankErrorMessages: Record<HankError, string> = {
     [HankError.TooManyArguments]: "Too many arguments",
     [HankError.MissingRequiredParameter]: "Missing required parameter: {0}",
     [HankError.Halt]: "HANK_HALT:{0}",
+    [HankError.BitwiseOutOfBounds]: "Value exceeds safe integer bounds for bitwise operation: {0}",
     [HankError.GenericRuntimeError]: "{0}"
 };
 

@@ -1,7 +1,7 @@
 import { Interpreter, HankScope } from './Interpreter.js';
 import { Lexer, TokenType } from './Lexer.js';
 import { Parser } from './Parser.js';
-import { Value, ValueType, Scope, NativeFunc, Expr, Resource, HankError } from './Types.js';
+import { Value, ValueType, Scope, NativeFunc, Expr, Resource, HankError, IHankExtension } from './Types.js';
 import { HankErrorRegistry } from './ErrorRegistry.js';
 
 /**
@@ -27,6 +27,16 @@ export class Runner {
             });
         }
         this.coreScope.set(name, { type: ValueType.Object, value: moduleObj });
+    }
+
+    /**
+     * Registers a Hank Extension and all its modules.
+     */
+    registerExtension(ext: IHankExtension) {
+        const mods = ext.getModules();
+        for (const [name, tasks] of Object.entries(mods)) {
+            this.registerModule(name, tasks);
+        }
     }
 
     /**

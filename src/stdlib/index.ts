@@ -1,11 +1,14 @@
-import { Value, ValueType, NativeFunc, Expr, Resource } from '../Types.js';
+import { Value, ValueType, NativeFunc, Expr, Resource, HankError, IHankExtension } from '../Types.js';
+import { HankErrorRegistry } from '../ErrorRegistry.js';
 
-export const StdLib = {
+export class StdLib implements IHankExtension {
+    public readonly name = "StdLib";
+
     /**
      * Returns the recommended standard library modules.
      * Developers should register these manually on their Runner.
      */
-    getModules(): Record<string, Record<string, NativeFunc>> {
+    public getModules(): Record<string, Record<string, NativeFunc>> {
         const valToString = (v: Value): string => {
             switch (v.type) {
                 case ValueType.String: return v.value;
@@ -137,35 +140,6 @@ export const StdLib = {
                     if (args.length > 1 && args[1].type === ValueType.Number) base = (args[1] as any).value;
                     if (base < 2 || base > 36) return { type: ValueType.Void };
                     return { type: ValueType.String, value: n.toString(base) };
-                },
-                bitAnd: (args) => {
-                    const a = (args.length > 0 && args[0].type === ValueType.Number) ? (args[0] as any).value : 0;
-                    const b = (args.length > 1 && args[1].type === ValueType.Number) ? (args[1] as any).value : 0;
-                    return { type: ValueType.Number, value: Number(BigInt(a) & BigInt(b)) };
-                },
-                bitOr: (args) => {
-                    const a = (args.length > 0 && args[0].type === ValueType.Number) ? (args[0] as any).value : 0;
-                    const b = (args.length > 1 && args[1].type === ValueType.Number) ? (args[1] as any).value : 0;
-                    return { type: ValueType.Number, value: Number(BigInt(a) | BigInt(b)) };
-                },
-                bitXor: (args) => {
-                    const a = (args.length > 0 && args[0].type === ValueType.Number) ? (args[0] as any).value : 0;
-                    const b = (args.length > 1 && args[1].type === ValueType.Number) ? (args[1] as any).value : 0;
-                    return { type: ValueType.Number, value: Number(BigInt(a) ^ BigInt(b)) };
-                },
-                bitNot: (args) => {
-                    const a = (args.length > 0 && args[0].type === ValueType.Number) ? (args[0] as any).value : 0;
-                    return { type: ValueType.Number, value: Number(~BigInt(a)) };
-                },
-                shiftL: (args) => {
-                    const a = (args.length > 0 && args[0].type === ValueType.Number) ? (args[0] as any).value : 0;
-                    const b = (args.length > 1 && args[1].type === ValueType.Number) ? (args[1] as any).value : 0;
-                    return { type: ValueType.Number, value: Number(BigInt(a) << BigInt(b)) };
-                },
-                shiftR: (args) => {
-                    const a = (args.length > 0 && args[0].type === ValueType.Number) ? (args[0] as any).value : 0;
-                    const b = (args.length > 1 && args[1].type === ValueType.Number) ? (args[1] as any).value : 0;
-                    return { type: ValueType.Number, value: Number(BigInt(a) >> BigInt(b)) };
                 }
             },
             math: {
@@ -259,4 +233,4 @@ export const StdLib = {
             }
         };
     }
-};
+}
