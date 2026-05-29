@@ -89,6 +89,18 @@ export class StdLib implements IHankExtension {
                 signal: (args) => {
                     if (args.length > 0) console.log(`[SIGNAL] ${valToString(args[0])}`);
                     return { type: ValueType.Void };
+                },
+                while: (args, ctx) => {
+                    if (args.length < 2) return { type: ValueType.Void };
+                    const cond = args[0];
+                    const body = args[1];
+                    let last: Value = { type: ValueType.Void };
+                    while (true) {
+                        const condVal = ctx.call(cond, []);
+                        if (condVal.type === ValueType.Void) break;
+                        last = ctx.call(body, []);
+                    }
+                    return last;
                 }
             },
             env: {
