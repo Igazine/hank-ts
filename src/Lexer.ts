@@ -1,4 +1,5 @@
-import { TokenData } from './Types.js';
+import { TokenData, HankError } from './Types.js';
+import { HankErrorRegistry } from './ErrorRegistry.js';
 
 export enum TokenType {
     Identifier,
@@ -105,7 +106,7 @@ export class Lexer {
                 case '[': this.addToken(TokenType.LBracket, '['); break;
                 case ']': this.addToken(TokenType.RBracket, ']'); break;
                 default:
-                    this.addToken(TokenType.Error, `Unexpected character: ${char}`);
+                    this.addToken(TokenType.Error, HankErrorRegistry.create(HankError.UnexpectedCharacter, [char]).message);
             }
             this.pos++;
         }
@@ -163,7 +164,7 @@ export class Lexer {
             this.pos++;
         }
         if (this.pos >= this.input.length) {
-            this.addToken(TokenType.Error, 'Unclosed string literal');
+            this.addToken(TokenType.Error, HankErrorRegistry.create(HankError.UnclosedStringLiteral).message);
             return;
         }
         this.pos++; // skip quote

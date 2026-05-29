@@ -1,4 +1,5 @@
-import { ValueType } from './Types.js';
+import { ValueType, HankError } from './Types.js';
+import { HankErrorRegistry } from './ErrorRegistry.js';
 export class Interpreter {
     globalScope;
     coreScope;
@@ -7,7 +8,13 @@ export class Interpreter {
         this.globalScope = new HankScope(parentScope || coreScope);
     }
     run(ast) {
-        return this.eval(ast);
+        try {
+            return this.eval(ast);
+        }
+        catch (e) {
+            console.error(`Runtime Error: ${e.message || String(e)}`);
+            return { type: ValueType.Void };
+        }
     }
     eval(node) {
         return this.evalInScope(node, this.globalScope);
@@ -138,7 +145,7 @@ export class Interpreter {
     }
     internalCall(task, args) {
         if (task.type !== ValueType.Task || !task.task) {
-            throw new Error(`Target is not a function: ${this.valToString(task)}`);
+            throw HankErrorRegistry.create(HankError.TargetNotFunction, [this.valToString(task)]);
         }
         if (task.task.isNative) {
             return task.task.native(args, this);
@@ -146,7 +153,7 @@ export class Interpreter {
         else {
             const t = task.task;
             if (args.length > t.params.length)
-                throw new Error("Too many arguments");
+                throw HankErrorRegistry.create(HankError.TooManyArguments);
             const callScope = new HankScope(t.closure);
             for (let i = 0; i < t.params.length; i++) {
                 const p = t.params[i];
@@ -158,7 +165,7 @@ export class Interpreter {
                     val = this.evalInScope(p.defaultValue, callScope);
                 }
                 else if (!p.isOptional) {
-                    throw new Error(`Missing required parameter: ${p.name}`);
+                    throw HankErrorRegistry.create(HankError.MissingRequiredParameter, [p.name]);
                 }
                 callScope.set(p.name, val);
             }
@@ -176,7 +183,7 @@ export class Interpreter {
         switch (v.type) {
             case ValueType.String: return v.value;
             case ValueType.Number: return v.value.toString();
-            case ValueType.Void: return 'null';
+            case ValueType.Void: return 'Void';
             case ValueType.Array: return '[Array]';
             case ValueType.Object: return '{Object}';
             case ValueType.Opaque: return `[Opaque:${v.label || 'Unknown'}]`;

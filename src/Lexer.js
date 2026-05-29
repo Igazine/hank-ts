@@ -1,3 +1,5 @@
+import { HankError } from './Types.js';
+import { HankErrorRegistry } from './ErrorRegistry.js';
 export var TokenType;
 (function (TokenType) {
     TokenType[TokenType["Identifier"] = 0] = "Identifier";
@@ -117,7 +119,7 @@ export class Lexer {
                     this.addToken(TokenType.RBracket, ']');
                     break;
                 default:
-                    this.addToken(TokenType.Error, `Unexpected character: ${char}`);
+                    this.addToken(TokenType.Error, HankErrorRegistry.create(HankError.UnexpectedCharacter, [char]).message);
             }
             this.pos++;
         }
@@ -178,7 +180,7 @@ export class Lexer {
             this.pos++;
         }
         if (this.pos >= this.input.length) {
-            this.addToken(TokenType.Error, 'Unclosed string literal');
+            this.addToken(TokenType.Error, HankErrorRegistry.create(HankError.UnclosedStringLiteral).message);
             return;
         }
         this.pos++; // skip quote

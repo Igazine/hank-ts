@@ -1,7 +1,8 @@
 import { Interpreter, HankScope } from './Interpreter.js';
 import { Lexer, TokenType } from './Lexer.js';
 import { Parser } from './Parser.js';
-import { Value, ValueType, Scope, NativeFunc, Expr, Resource } from './Types.js';
+import { Value, ValueType, Scope, NativeFunc, Expr, Resource, HankError } from './Types.js';
+import { HankErrorRegistry } from './ErrorRegistry.js';
 
 /**
  * A Hank Host Runner.
@@ -37,7 +38,9 @@ export class Runner {
         if (cached && cached.ast) return cached.ast;
 
         // Circular Dependency Check
-        if (stack.includes(resource.id)) throw new Error(`Circular Dependency: ${resource.id}`);
+        if (stack.includes(resource.id)) {
+            throw HankErrorRegistry.create(HankError.CircularDependency, [resource.id]);
+        }
 
         // Reconcile with cache
         const activeResource = cached || resource;
@@ -46,7 +49,9 @@ export class Runner {
         }
 
         await activeResource.load();
-        if (activeResource.content === null) throw new Error(`Resource content not loaded: ${activeResource.id}`);
+        if (activeResource.content === null) {
+            throw HankErrorRegistry.create(HankError.ResourceContentNotLoaded, [activeResource.id]);
+        }
 
         const newStack = [...stack, activeResource.id];
 
@@ -54,12 +59,6 @@ export class Runner {
         const tokens = lexer.tokenize();
         const parser = new Parser(tokens, activeResource.id, (macroPath: string) => {
             const mRes = activeResource.resolve(macroPath);
-            // Note: Since load is async and Parser is sync, we need a strategy here.
-            // For now, we'll assume sync loading for local resources, or we might need to 
-            // make the Parser aware of the resource tree if we want true async macros.
-            // However, Haxe/Go are sync in their parser.
-            // Let's implement a sync-compatible load if possible, or wait for the resource.
-            // In Node.js, we can often read sync.
             const result = this.loadSync(mRes, newStack);
             return result;
         });
@@ -75,19 +74,21 @@ export class Runner {
     private loadSync(resource: Resource, stack: string[]): Expr {
         const cached = this.resourceCache.get(resource.id);
         if (cached && cached.ast) return cached.ast;
-        if (stack.includes(resource.id)) throw new Error(`Circular Dependency: ${resource.id}`);
+        if (stack.includes(resource.id)) {
+            throw HankErrorRegistry.create(HankError.CircularDependency, [resource.id]);
+        }
 
         const activeResource = cached || resource;
         if (!cached) this.resourceCache.set(resource.id, resource);
 
-        // This requires the resource.load() to be capable of sync execution.
-        // We'll call it and hope for the best, or check if it returns a Promise.
         const loadResult = activeResource.load();
         if (loadResult instanceof Promise) {
             throw new Error(`Asynchronous macro loading detected for ${resource.id}. TS Runner requires sync resolution for macros.`);
         }
 
-        if (activeResource.content === null) throw new Error(`Resource content not loaded: ${activeResource.id}`);
+        if (activeResource.content === null) {
+            throw HankErrorRegistry.create(HankError.ResourceContentNotLoaded, [activeResource.id]);
+        }
 
         const newStack = [...stack, activeResource.id];
         const lexer = new Lexer(activeResource.content);
@@ -118,7 +119,7 @@ export class Runner {
         const scriptTask = interpreter.run(ast);
 
         if (scriptTask.type !== ValueType.Task) {
-            throw new Error("Hank Error: Script must evaluate to a Task definition.");
+            throw HankErrorRegistry.create(HankError.ScriptMustBeTask);
         }
 
         return interpreter.call(scriptTask, args);

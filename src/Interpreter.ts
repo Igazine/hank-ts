@@ -1,4 +1,5 @@
-import { Expr, Param, Scope, TokenData, Value, ValueType, ExecutionContext } from './Types.js';
+import { Expr, Param, Scope, TokenData, Value, ValueType, ExecutionContext, HankError, HankErrorValue } from './Types.js';
+import { HankErrorRegistry } from './ErrorRegistry.js';
 
 export class Interpreter implements ExecutionContext {
     public globalScope: Scope;
@@ -10,7 +11,12 @@ export class Interpreter implements ExecutionContext {
     }
 
     run(ast: Expr): Value {
-        return this.eval(ast);
+        try {
+            return this.eval(ast);
+        } catch (e: any) {
+            console.error(`Runtime Error: ${e.message || String(e)}`);
+            return { type: ValueType.Void };
+        }
     }
 
     eval(node: Expr): Value {
@@ -137,14 +143,14 @@ export class Interpreter implements ExecutionContext {
 
     private internalCall(task: Value, args: Value[]): Value {
         if (task.type !== ValueType.Task || !task.task) {
-            throw new Error(`Target is not a function: ${this.valToString(task)}`);
+            throw HankErrorRegistry.create(HankError.TargetNotFunction, [this.valToString(task)]);
         }
 
         if (task.task.isNative) {
             return task.task.native!(args, this);
         } else {
             const t = task.task;
-            if (args.length > t.params!.length) throw new Error("Too many arguments");
+            if (args.length > t.params!.length) throw HankErrorRegistry.create(HankError.TooManyArguments);
 
             const callScope = new HankScope(t.closure);
             for (let i = 0; i < t.params!.length; i++) {
@@ -155,7 +161,7 @@ export class Interpreter implements ExecutionContext {
                 } else if (p.defaultValue) {
                     val = this.evalInScope(p.defaultValue, callScope);
                 } else if (!p.isOptional) {
-                    throw new Error(`Missing required parameter: ${p.name}`);
+                    throw HankErrorRegistry.create(HankError.MissingRequiredParameter, [p.name]);
                 }
                 callScope.set(p.name, val);
             }
@@ -176,7 +182,7 @@ export class Interpreter implements ExecutionContext {
         switch (v.type) {
             case ValueType.String: return v.value;
             case ValueType.Number: return v.value.toString();
-            case ValueType.Void: return 'null';
+            case ValueType.Void: return 'Void';
             case ValueType.Array: return '[Array]';
             case ValueType.Object: return '{Object}';
             case ValueType.Opaque: return `[Opaque:${v.label || 'Unknown'}]`;

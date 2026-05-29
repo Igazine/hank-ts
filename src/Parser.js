@@ -1,5 +1,6 @@
-import { ValueType } from './Types.js';
+import { ValueType, HankError } from './Types.js';
 import { TokenType } from './Lexer.js';
+import { HankErrorRegistry } from './ErrorRegistry.js';
 export class Parser {
     tokens;
     pos = 0;
@@ -19,7 +20,7 @@ export class Parser {
             this.skipNewlines();
         }
         if (this.isEof())
-            throw new Error("Syntax Error: Script is empty.");
+            throw this.error(HankError.EmptyScript);
         // 2. Parse exactly ONE TaskDef (FuncDef or Block)
         let mainTask;
         if (this.peek().type === TokenType.LParen && this.isFuncDefStart()) {
@@ -29,13 +30,13 @@ export class Parser {
             mainTask = this.parseBlock();
         }
         else {
-            throw new Error("Syntax Error: Expected main task definition (a closure or a block).");
+            throw this.error(HankError.ExpectedMainTask);
         }
         stmts.push(mainTask);
         // 3. Assert EOF
         this.skipNewlines();
         if (!this.isEof()) {
-            throw new Error("Syntax Error: Unexpected code outside of main task. A Hank script must contain exactly one Task definition.");
+            throw this.error(HankError.UnexpectedCodeOutsideMainTask);
         }
         if (stmts.length === 1)
             return stmts[0];
@@ -100,7 +101,7 @@ export class Parser {
                 return { kind: 'Assign', name: expr.name, value, td };
             }
             else {
-                throw this.error("Invalid assignment target");
+                throw this.error(HankError.InvalidAssignmentTarget);
             }
         }
         return expr;
@@ -158,7 +159,7 @@ export class Parser {
                 expr = this.parseReturn();
                 break;
             default:
-                throw this.error(`Unexpected token: ${TokenType[t.type]} (${t.literal})`);
+                throw this.error(HankError.UnexpectedToken, [TokenType[t.type], t.literal]);
         }
         return this.finishPrimary(expr);
     }
@@ -321,7 +322,7 @@ export class Parser {
             rawPath = this.consume(TokenType.String).literal;
         }
         else {
-            throw new Error("Syntax Error: The '@' macro strictly requires a string literal path (e.g., @ \"utils\"). Identifier shorthand is not allowed.");
+            throw this.error(HankError.MacroRequiresString);
         }
         const taskAst = this.macroResolver(rawPath);
         const taskName = rawPath.split(/[\\/]/).pop()?.replace(/\.hank$/, '') || rawPath;
@@ -330,14 +331,14 @@ export class Parser {
     consumeIdentifier() {
         const t = this.peek();
         if (t.type !== TokenType.Identifier)
-            throw this.error(`Expected identifier, found ${TokenType[t.type]}`);
+            throw this.error(HankError.ExpectedIdentifier, [TokenType[t.type]]);
         this.pos++;
         return t.literal;
     }
     consume(type) {
         const t = this.peek();
         if (t.type !== type)
-            throw this.error(`Expected ${TokenType[type]}, found ${TokenType[t.type]}`);
+            throw this.error(HankError.UnexpectedToken, [TokenType[type], TokenType[t.type]]);
         this.pos++;
         return t;
     }
@@ -355,8 +356,8 @@ export class Parser {
     isEof() {
         return this.pos >= this.tokens.length || this.tokens[this.pos].type === TokenType.EOF;
     }
-    error(msg) {
+    error(code, args) {
         const t = this.peek();
-        return `ERROR: ${msg} in ${this.filename} at\n\t${t.line}:\t${t.lineText}`;
+        return HankErrorRegistry.create(code, args, this.filename, t.line, t.lineText);
     }
 }
