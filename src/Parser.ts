@@ -57,7 +57,7 @@ export class Parser {
 
     private parseFlowControl(): Expr {
         const t = this.consume(TokenType.Question);
-        const td: TokenData = { line: t.line, lineText: t.lineText };
+        const td: TokenData = { line: t.line, column: t.column, lineText: t.lineText };
         
         let condition: Expr;
         if (this.peek().type === TokenType.LParen) {
@@ -122,7 +122,7 @@ export class Parser {
 
     private parsePrimary(): Expr {
         const t = this.peek();
-        const td: TokenData = { line: t.line, lineText: t.lineText };
+        const td: TokenData = { line: t.line, column: t.column, lineText: t.lineText };
         
         let expr: Expr;
         switch (t.type) {
@@ -177,7 +177,7 @@ export class Parser {
     private finishPrimary(expr: Expr): Expr {
         while (true) {
             const t = this.peek();
-            const td: TokenData = { line: t.line, lineText: t.lineText };
+            const td: TokenData = { line: t.line, column: t.column, lineText: t.lineText };
             if (t.type === TokenType.Dot) {
                 this.consume(TokenType.Dot);
                 expr = { kind: 'Field', collection: expr, fieldName: this.consumeIdentifier(), td };
@@ -234,7 +234,7 @@ export class Parser {
 
     private parseBlock(): Expr {
         const t = this.consume(TokenType.LBrace);
-        const td: TokenData = { line: t.line, lineText: t.lineText };
+        const td: TokenData = { line: t.line, column: t.column, lineText: t.lineText };
         const stmts: Expr[] = [];
         while (this.peek().type !== TokenType.RBrace && !this.isEof()) {
             this.skipNewlines();
@@ -247,7 +247,7 @@ export class Parser {
 
     private parseCollectionLiteral(): Expr {
         const t = this.consume(TokenType.LBracket);
-        const td: TokenData = { line: t.line, lineText: t.lineText };
+        const td: TokenData = { line: t.line, column: t.column, lineText: t.lineText };
         this.skipNewlines();
 
         // 1. Handle [:]
@@ -333,7 +333,7 @@ export class Parser {
 
     private parseReturn(): Expr {
         const t = this.consume(TokenType.Caret);
-        const td: TokenData = { line: t.line, lineText: t.lineText };
+        const td: TokenData = { line: t.line, column: t.column, lineText: t.lineText };
         let val: Expr = { kind: 'Literal', value: { type: ValueType.Void }, td };
         if (!this.isEof()) {
             const next = this.peek().type;
@@ -346,7 +346,7 @@ export class Parser {
 
     private parseInclude(): Expr {
         const t = this.consume(TokenType.At);
-        const td: TokenData = { line: t.line, lineText: t.lineText };
+        const td: TokenData = { line: t.line, column: t.column, lineText: t.lineText };
         let rawPath = '';
         if (this.peek().type === TokenType.String) {
             rawPath = this.consume(TokenType.String).literal;
@@ -385,7 +385,7 @@ export class Parser {
 
     private peekTd(): TokenData {
         const t = this.peek();
-        return { line: t.line, lineText: t.lineText };
+        return { line: t.line, column: t.column, lineText: t.lineText };
     }
 
     private skipNewlines(): void {
@@ -400,6 +400,6 @@ export class Parser {
 
     private error(code: HankError, args?: any[]): HankErrorValue {
         const t = this.peek();
-        return HankErrorRegistry.create(code, args, this.filename, t.line, t.lineText);
+        return HankErrorRegistry.create(code, args, this.filename, t.line, t.column, t.lineText);
     }
 }

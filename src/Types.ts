@@ -90,6 +90,7 @@ export type Expr =
 
 export interface TokenData {
     line: number;
+    column: number;
     lineText: string;
 }
 
@@ -133,7 +134,14 @@ export enum HankError {
 }
 
 export class HankErrorValue extends Error {
-    constructor(public code: HankError, public message: string) {
+    constructor(
+        public code: HankError, 
+        public message: string,
+        public filename?: string,
+        public line?: number,
+        public column?: number,
+        public lineText?: string
+    ) {
         super(message);
         this.name = 'HankError';
     }

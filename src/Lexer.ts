@@ -33,6 +33,7 @@ export interface Token {
     type: TokenType;
     literal: string;
     line: number;
+    column: number;
     lineText: string;
 }
 
@@ -114,11 +115,13 @@ export class Lexer {
         return this.tokens;
     }
 
-    private addToken(type: TokenType, literal: string) {
+    private addToken(type: TokenType, literal: string, posOffset: number = 0) {
+        const column = (this.pos - posOffset) - this.lineStart + 1;
         this.tokens.push({
             type,
             literal,
             line: this.line,
+            column,
             lineText: this.getCurrentLineText()
         });
     }
@@ -135,7 +138,7 @@ export class Lexer {
         while (this.pos < this.input.length && /[0-9.]/.test(this.input[this.pos])) {
             this.pos++;
         }
-        this.addToken(TokenType.Number, this.input.substring(start, this.pos));
+        this.addToken(TokenType.Number, this.input.substring(start, this.pos), this.pos - start);
     }
 
     private readIdentifier() {
@@ -144,10 +147,11 @@ export class Lexer {
         while (this.pos < this.input.length && /[a-zA-Z0-9_]/.test(this.input[this.pos])) {
             this.pos++;
         }
-        this.addToken(TokenType.Identifier, this.input.substring(start, this.pos));
+        this.addToken(TokenType.Identifier, this.input.substring(start, this.pos), this.pos - start);
     }
 
     private readString(quote: string) {
+        const start = this.pos;
         this.pos++; // skip quote
         let val = '';
         while (this.pos < this.input.length && this.input[this.pos] !== quote) {
@@ -164,11 +168,11 @@ export class Lexer {
             this.pos++;
         }
         if (this.pos >= this.input.length) {
-            this.addToken(TokenType.Error, HankErrorRegistry.create(HankError.UnclosedStringLiteral).message);
+            this.addToken(TokenType.Error, HankErrorRegistry.create(HankError.UnclosedStringLiteral).message, this.pos - start);
             return;
         }
         this.pos++; // skip quote
-        this.addToken(TokenType.String, val);
+        this.addToken(TokenType.String, val, this.pos - start);
     }
 
     private getCurrentLineText(): string {

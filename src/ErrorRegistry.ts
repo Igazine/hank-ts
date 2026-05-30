@@ -27,7 +27,7 @@ export const HankErrorMessages: Record<HankError, string> = {
 };
 
 export class HankErrorRegistry {
-    static create(code: HankError, args?: any[], filename?: string, line?: number, lineText?: string): HankErrorValue {
+    static create(code: HankError, args?: any[], filename?: string, line?: number, column?: number, lineText?: string): HankErrorValue {
         let tmpl = HankErrorMessages[code] || "Unknown Error";
 
         if (args) {
@@ -36,10 +36,11 @@ export class HankErrorRegistry {
             });
         }
 
+        let fullMessage = tmpl;
         if (filename && line !== undefined && lineText !== undefined) {
-            tmpl = `ERROR: ${tmpl} in ${filename} at\n\t${line}:\t${lineText}`;
+            fullMessage = `ERROR: ${tmpl} in ${filename} at\n\t${line}:\t${lineText}`;
         }
 
-        return new HankErrorValue(code, tmpl);
+        return new HankErrorValue(code, fullMessage, filename, line, column, lineText);
     }
 }
