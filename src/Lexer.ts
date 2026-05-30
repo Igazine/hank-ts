@@ -135,9 +135,32 @@ export class Lexer {
     private readNumber() {
         const start = this.pos;
         if (this.input[this.pos] === '-') this.pos++;
-        while (this.pos < this.input.length && /[0-9.]/.test(this.input[this.pos])) {
+        
+        let hasDot = false;
+        while (this.pos < this.input.length) {
+            const char = this.input[this.pos];
+            if (char === '.') {
+                if (hasDot) break; // Stop at second dot; parser will catch dot-after-number
+                hasDot = true;
+            } else if (!/[0-9]/.test(char)) {
+                break;
+            }
             this.pos++;
         }
+
+        // Validate: EBNF requires digits after a dot if present
+        const literal = this.input.substring(start, this.pos);
+        if (literal.endsWith('.')) {
+            this.pos--; // Roll back the dot
+        }
+
+        // Check for illegal suffix (e.g., 100a)
+        if (this.pos < this.input.length && /[a-zA-Z_]/.test(this.input[this.pos])) {
+            const char = this.input[this.pos];
+            this.addToken(TokenType.Error, HankErrorRegistry.create(HankError.UnexpectedCharacter, [char]).message, this.pos - start);
+            return;
+        }
+
         this.addToken(TokenType.Number, this.input.substring(start, this.pos), this.pos - start);
     }
 
