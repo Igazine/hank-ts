@@ -58,9 +58,15 @@ export class Parser {
     private parseFlowControl(): Expr {
         const t = this.consume(TokenType.Question);
         const td: TokenData = { line: t.line, lineText: t.lineText };
-        this.consume(TokenType.LParen);
-        const condition = this.parseExpression();
-        this.consume(TokenType.RParen);
+        
+        let condition: Expr;
+        if (this.peek().type === TokenType.LParen) {
+            this.consume(TokenType.LParen);
+            condition = this.parseExpression();
+            this.consume(TokenType.RParen);
+        } else {
+            condition = this.parseExpression();
+        }
         
         const success = this.parseBlock();
         
