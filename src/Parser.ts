@@ -130,19 +130,16 @@ export class Parser {
                 expr = this.parseInclude();
                 break;
             case TokenType.LParen:
-                if (this.isFuncDefStart()) {
-                    expr = this.parseFuncDef();
-                } else {
-                    this.pos++;
-                    const e = this.parseExpression();
-                    this.consume(TokenType.RParen);
-                    expr = e;
-                }
-                break;
-            case TokenType.LBrace:
-                expr = this.parseBlock();
-                break;
-            case TokenType.LBracket:
+                case TokenType.LParen:
+                    if (this.isFuncDefStart()) {
+                        expr = this.parseFuncDef();
+                    } else {
+                        this.pos++;
+                        expr = this.parseExpression();
+                        this.consume(TokenType.RParen);
+                    }
+                    break;
+                case TokenType.LBracket:
                 expr = this.parseCollectionLiteral();
                 break;
             case TokenType.Not:
