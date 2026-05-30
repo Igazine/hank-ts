@@ -1,170 +1,100 @@
-import { ValueType, Runner, StdLib } from '../../../src/index.js';
+import { Runner } from '../../../dist/Runner.js';
+import { StdLib } from '../../../dist/stdlib/index.js';
+import { ValueType } from '../../../dist/Types.js';
 import { FileResource } from './FileResource.js';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import * as cp from 'node:child_process';
-import * as os from 'node:os';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 async function main() {
     const args = process.argv.slice(2);
-    const runner = createRunner();
+    // Submodule is at vendor/hank relative to the hank-ts root.
+    const current = process.cwd();
+    let workspaceRoot = path.resolve(current, 'vendor/hank');
+    if (!fs.existsSync(workspaceRoot)) {
+        workspaceRoot = path.resolve(current, '../../vendor/hank');
+    }
     if (args.length === 0) {
-        await runConformance(runner);
+        await runConformance(workspaceRoot);
         return;
     }
-    const scriptPath = path.isAbsolute(args[0]) ? args[0] : path.resolve(process.cwd(), args[0]);
+    const runner = createRunner();
+    const scriptPath = path.isAbsolute(args[0]) ? args[0] : path.resolve(current, args[0]);
     const resource = FileResource.create(scriptPath);
-    const hankArgs = args.slice(1).map(a => ({ type: ValueType.String, value: a }));
+    const hankArgs = [];
+    for (let i = 1; i < args.length; i++) {
+        hankArgs.push({ type: ValueType.String, value: args[i] });
+    }
     try {
-        const val = await runner.run(resource, hankArgs);
-        if (val.type === ValueType.Number) {
-            process.exit(val.value);
+        const res = await runner.run(resource, hankArgs);
+        if (res.type === ValueType.Number) {
+            process.exit(Math.floor(res.value));
         }
         process.exit(0);
     }
     catch (e) {
-        console.error(e.message || e);
+        handleError(e);
         process.exit(1);
+    }
+}
+function handleError(e) {
+    if (e.message) {
+        process.stderr.write(e.message + "\n");
+    }
+    else {
+        process.stderr.write(String(e) + "\n");
     }
 }
 function createRunner() {
     const runner = new Runner();
-    // 1. Register Standard Library modules manually
-    const std = StdLib.getModules();
-    for (const [name, tasks] of Object.entries(std)) {
-        runner.registerModule(name, tasks);
-    }
-    // 2. Register Example SYSLIB modules
-    registerSyslib(runner);
+    // 0. Register Localization
+    runner.registerLocalization({
+        4001: "Target is not a function: {0}",
+        4007: "Type Mismatch: Expected {0}, got {1} in {2}",
+        4005: "Value exceeds safe integer bounds: {0} in {1}"
+    });
+    // Register Extensions
+    runner.registerExtension(new StdLib());
     return runner;
 }
-function registerSyslib(runner) {
-    runner.registerModule('os', {
-        type: () => ({ type: ValueType.String, value: process.platform }),
-        name: () => ({ type: ValueType.String, value: process.platform }),
-        arch: () => ({ type: ValueType.String, value: process.arch }),
-        memory: () => {
-            const map = new Map();
-            map.set('total', { type: ValueType.Number, value: os.totalmem() });
-            map.set('free', { type: ValueType.Number, value: os.freemem() });
-            map.set('used', { type: ValueType.Number, value: os.totalmem() - os.freemem() });
-            return { type: ValueType.Object, value: map };
-        },
-        cpu: () => ({ type: ValueType.Number, value: os.loadavg()[0] })
-    });
-    runner.registerModule('host', {
-        cwd: () => ({ type: ValueType.String, value: process.cwd() }),
-        pid: () => ({ type: ValueType.Number, value: process.pid }),
-        isRoot: () => (process.getuid?.() === 0 ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void })
-    });
-    runner.registerModule('fs', {
-        exists: (args) => {
-            const p = args[0].value;
-            return fs.existsSync(p) ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void };
-        },
-        read: (args) => {
-            const p = args[0].value;
-            try {
-                return { type: ValueType.String, value: fs.readFileSync(p, 'utf-8') };
-            }
-            catch (e) {
-                return { type: ValueType.Void };
-            }
-        },
-        write: (args) => {
-            const p = args[0].value;
-            const c = args[1].value;
-            try {
-                fs.writeFileSync(p, c);
-                return { type: ValueType.Number, value: 1 };
-            }
-            catch (e) {
-                return { type: ValueType.Void };
-            }
-        },
-        deleteFile: (args) => {
-            const p = args[0].value;
-            try {
-                fs.unlinkSync(p);
-                return { type: ValueType.Number, value: 1 };
-            }
-            catch (e) {
-                return { type: ValueType.Void };
-            }
-        },
-        stat: (args) => {
-            const p = args[0].value;
-            try {
-                const s = fs.statSync(p);
-                const map = new Map();
-                map.set('size', { type: ValueType.Number, value: s.size });
-                map.set('mtime', { type: ValueType.Number, value: s.mtimeMs });
-                map.set('isDir', s.isDirectory() ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void });
-                return { type: ValueType.Object, value: map };
-            }
-            catch (e) {
-                return { type: ValueType.Void };
-            }
-        }
-    });
-    runner.registerModule('proc', {
-        run: (args) => {
-            const cmd = args[0].value;
-            const cmdArgs = args[1]?.type === ValueType.Array ? args[1].value.map((a) => a.value) : [];
-            try {
-                const res = cp.spawnSync(cmd, cmdArgs, { encoding: 'utf-8' });
-                const map = new Map();
-                map.set('code', { type: ValueType.Number, value: res.status ?? 0 });
-                map.set('stdout', { type: ValueType.String, value: res.stdout });
-                map.set('stderr', { type: ValueType.String, value: res.stderr });
-                return { type: ValueType.Object, value: map };
-            }
-            catch (e) {
-                const map = new Map();
-                map.set('code', { type: ValueType.Number, value: 1 });
-                map.set('stdout', { type: ValueType.String, value: '' });
-                map.set('stderr', { type: ValueType.String, value: e.toString() });
-                return { type: ValueType.Object, value: map };
-            }
-        }
-    });
-}
-async function runConformance(runner) {
-    const root = process.cwd();
-    let workspaceRoot = path.resolve(root, 'vendor/hank');
-    if (!fs.existsSync(workspaceRoot)) {
-        workspaceRoot = path.resolve(root, '../../vendor/hank');
-    }
+async function runConformance(workspaceRoot) {
     const tests = [
-        'test/conformance/01_literals.hank',
-        'test/conformance/02_gates.hank',
-        'test/conformance/03_scoping.hank',
-        'test/conformance/04_hoisting.hank',
-        'test/conformance/05_params.hank',
-        'test/conformance/06_macros.hank',
-        'test/conformance/07_returns.hank',
-        'test/conformance/08_host_args.hank',
-        'test/conformance/09_deep_nesting.hank',
-        'test/conformance/10_edge_cases.hank',
-        'test/conformance/11_regex_parse.hank',
-        'test/conformance/12_data_advanced.hank',
-        'test/conformance/13_logic_module.hank',
-        'test/conformance/14_syslib_hank.hank',
-        'test/conformance/15_logic_eq.hank',
-        'test/conformance/16_chained_assign.hank',
-        'test/conformance/17_num_module.hank',
+        "test/conformance/01_literals.hank",
+        "test/conformance/02_gates.hank",
+        "test/conformance/03_scoping.hank",
+        "test/conformance/04_hoisting.hank",
+        "test/conformance/05_params.hank",
+        "test/conformance/06_macros.hank",
+        "test/conformance/07_returns.hank",
+        "test/conformance/08_host_args.hank",
+        "test/conformance/09_deep_nesting.hank",
+        "test/conformance/10_edge_cases.hank",
+        "test/conformance/11_regex_parse.hank",
+        "test/conformance/12_data_advanced.hank",
+        "test/conformance/13_logic_module.hank",
+        "test/conformance/15_logic_eq.hank",
+        "test/conformance/16_chained_assign.hank",
+        "test/conformance/17_num_module.hank",
+        "test/conformance/18_runtime_module.hank",
+        "test/conformance/19_error_handling.hank",
     ];
     for (const t of tests) {
-        console.log(`--- Running: ${t} ---`);
-        const fullPath = path.join(workspaceRoot, t);
-        const resource = FileResource.create(fullPath);
-        const args = t.endsWith('08_host_args.hank') ? [{ type: ValueType.String, value: 'Tamas' }] : [];
+        console.log(`--- Running Conformance: ${t} ---`);
+        const runner = createRunner();
+        const testPath = path.resolve(workspaceRoot, t);
+        const resource = FileResource.create(testPath);
+        const args = [];
+        if (t.endsWith("08_host_args.hank")) {
+            args.push({ type: ValueType.String, value: "Tamas" });
+        }
         try {
             await runner.run(resource, args);
         }
         catch (e) {
-            console.log(`Test Failed: ${e.message || e}`);
+            handleError(e);
         }
         console.log('--------------------\n');
     }
 }
-main();
+main().catch(console.error);

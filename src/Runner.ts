@@ -11,9 +11,20 @@ import { HankErrorRegistry } from './ErrorRegistry.js';
  */
 export class Runner {
     private resourceCache: Map<string, Resource> = new Map();
+    private macroMap: Map<string, Expr> = new Map();
     public coreScope: Scope = new HankScope();
+    public localization: Record<number, string> = {};
 
     constructor() {}
+
+    /**
+     * Registers a localization map (Code -> Template).
+     */
+    registerLocalization(map: Record<number, string>) {
+        for (const [code, tmpl] of Object.entries(map)) {
+            this.localization[Number(code)] = tmpl;
+        }
+    }
 
     /**
      * Registers a set of native tasks under a module name.
@@ -52,11 +63,11 @@ export class Runner {
             throw HankErrorRegistry.create(HankError.CircularDependency, [resource.id]);
         }
 
-        // Reconcile with cache
-        const activeResource = cached || resource;
+        // Cache first, then load
         if (!cached) {
             this.resourceCache.set(resource.id, resource);
         }
+        const activeResource = cached || resource;
 
         await activeResource.load();
         if (activeResource.content === null) {
@@ -66,54 +77,36 @@ export class Runner {
         const newStack = [...stack, activeResource.id];
 
         const lexer = new Lexer(activeResource.content);
+        const parser = new Parser(lexer.tokenize(), activeResource.id, (macroPath) => {
+            const mRes = activeResource.resolve(macroPath);
+            // This is problematic in a sync constructor.
+            // But we know that Runner.load is called recursively before Parser.parse.
+            // So the macro SHOULD already be in the cache? No, not necessarily.
+            
+            // Wait, HAL says the Parser MUST request the resource from the Runner.
+            // In TS, we'll just throw if it's not pre-loaded, which is what Runner should do.
+            const resolved = activeResource.resolve(macroPath);
+            const found = this.resourceCache.get(resolved.id);
+            if (!found || !found.ast) throw new Error(`Macro not pre-loaded: ${macroPath}`);
+            return found.ast;
+        });
+
+        // Pre-scan for macros to ensure they are loaded before parsing
         const tokens = lexer.tokenize();
-        const parser = new Parser(tokens, activeResource.id, (macroPath: string) => {
-            const mRes = activeResource.resolve(macroPath);
-            const result = this.loadSync(mRes, newStack);
-            return result;
-        });
+        for (let i = 0; i < tokens.length; i++) {
+            if (tokens[i].type === TokenType.At && tokens[i+1]?.type === TokenType.String) {
+                const macroPath = tokens[i+1].literal;
+                const mRes = activeResource.resolve(macroPath);
+                await this.load(mRes, newStack);
+            }
+        }
 
-        const ast = parser.parse();
-        activeResource.ast = ast;
-        return ast;
+        activeResource.ast = parser.parse();
+        return activeResource.ast;
     }
 
     /**
-     * Synchronous version of load for macro resolution.
-     */
-    private loadSync(resource: Resource, stack: string[]): Expr {
-        const cached = this.resourceCache.get(resource.id);
-        if (cached && cached.ast) return cached.ast;
-        if (stack.includes(resource.id)) {
-            throw HankErrorRegistry.create(HankError.CircularDependency, [resource.id]);
-        }
-
-        const activeResource = cached || resource;
-        if (!cached) this.resourceCache.set(resource.id, resource);
-
-        const loadResult = activeResource.load();
-        if (loadResult instanceof Promise) {
-            throw new Error(`Asynchronous macro loading detected for ${resource.id}. TS Runner requires sync resolution for macros.`);
-        }
-
-        if (activeResource.content === null) {
-            throw HankErrorRegistry.create(HankError.ResourceContentNotLoaded, [activeResource.id]);
-        }
-
-        const newStack = [...stack, activeResource.id];
-        const lexer = new Lexer(activeResource.content);
-        const parser = new Parser(lexer.tokenize(), activeResource.id, (macroPath: string) => {
-            const mRes = activeResource.resolve(macroPath);
-            return this.loadSync(mRes, newStack);
-        });
-
-        const ast = parser.parse();
-        activeResource.ast = ast;
-        return ast;
-    }
-
-    /**
-     * Removes a resource from the cache.
+     * Removes a resource and its AST from the cache.
      */
     unload(resource: Resource) {
         this.resourceCache.delete(resource.id);
@@ -125,13 +118,15 @@ export class Runner {
     async run(resource: Resource, args: Value[] = []): Promise<Value> {
         const ast = await this.load(resource);
 
-        const interpreter = new Interpreter(undefined, this.coreScope);
+        const interpreter = new Interpreter(undefined, this.coreScope, this.localization);
         const scriptTask = interpreter.run(ast);
 
-        if (scriptTask.type !== ValueType.Task) {
-            throw HankErrorRegistry.create(HankError.ScriptMustBeTask);
+        if (scriptTask.type === ValueType.Task) {
+            return interpreter.call(scriptTask, args);
+        } else if (scriptTask.type === ValueType.Error) {
+            return scriptTask;
         }
 
-        return interpreter.call(scriptTask, args);
+        throw HankErrorRegistry.create(HankError.ScriptMustBeTask);
     }
 }

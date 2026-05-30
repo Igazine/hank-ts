@@ -5,7 +5,8 @@ export enum ValueType {
     Array,
     Object,
     Opaque,
-    Task
+    Task,
+    Error
 }
 
 export interface Value {
@@ -13,6 +14,8 @@ export interface Value {
     value?: any;
     label?: string; // For Opaque
     task?: TaskValue;
+    code?: number; // For Error
+    args?: Value[]; // For Error
 }
 
 export interface TaskValue {
@@ -35,6 +38,8 @@ export type NativeFunc = (args: Value[], ctx: ExecutionContext) => Value;
 export interface ExecutionContext {
     call(task: Value, args: Value[]): Value;
     eval(node: Expr): Value;
+    isError(val: Value): boolean;
+    getLocalization(): Record<number, string>;
     scope: Scope;
 }
 
@@ -80,7 +85,8 @@ export type Expr =
     | { kind: 'UnOp', op: string, target: Expr, td: TokenData }
     | { kind: 'Object', fields: Map<string, Expr>, td: TokenData }
     | { kind: 'Array', items: Expr[], td: TokenData }
-    | { kind: 'FlowControl', condition: Expr, success: Expr, fallback?: Expr, rescue?: Expr, catchVar?: string, td: TokenData };
+    | { kind: 'FlowControl', condition: Expr, success: Expr, fallback?: Expr, rescue?: Expr, catchVar?: string, td: TokenData }
+    | { kind: 'Error', code: number, args: Expr[], td: TokenData };
 
 export interface TokenData {
     line: number;
@@ -123,6 +129,7 @@ export enum HankError {
     Halt = 4004,
     BitwiseOutOfBounds = 4005,
     GenericRuntimeError = 4006,
+    TypeMismatch = 4007,
 }
 
 export class HankErrorValue extends Error {

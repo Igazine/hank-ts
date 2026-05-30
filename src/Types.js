@@ -7,6 +7,7 @@ export var ValueType;
     ValueType[ValueType["Object"] = 4] = "Object";
     ValueType[ValueType["Opaque"] = 5] = "Opaque";
     ValueType[ValueType["Task"] = 6] = "Task";
+    ValueType[ValueType["Error"] = 7] = "Error";
 })(ValueType || (ValueType = {}));
 /**
  * A base class for all Hank resources.
@@ -43,7 +44,9 @@ export var HankError;
     HankError[HankError["TooManyArguments"] = 4002] = "TooManyArguments";
     HankError[HankError["MissingRequiredParameter"] = 4003] = "MissingRequiredParameter";
     HankError[HankError["Halt"] = 4004] = "Halt";
-    HankError[HankError["GenericRuntimeError"] = 4005] = "GenericRuntimeError";
+    HankError[HankError["BitwiseOutOfBounds"] = 4005] = "BitwiseOutOfBounds";
+    HankError[HankError["GenericRuntimeError"] = 4006] = "GenericRuntimeError";
+    HankError[HankError["TypeMismatch"] = 4007] = "TypeMismatch";
 })(HankError || (HankError = {}));
 export class HankErrorValue extends Error {
     code;

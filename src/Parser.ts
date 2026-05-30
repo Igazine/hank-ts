@@ -88,9 +88,11 @@ export class Parser {
         
         if (this.peek().type === TokenType.Rescue) {
             this.consume(TokenType.Rescue);
-            this.consume(TokenType.LParen);
-            catchVar = this.consumeIdentifier();
-            this.consume(TokenType.RParen);
+            if (this.peek().type === TokenType.LParen) {
+                this.consume(TokenType.LParen);
+                catchVar = this.consumeIdentifier();
+                this.consume(TokenType.RParen);
+            }
             rescue = this.parseBlock();
         } else {
             this.pos = savedPos;

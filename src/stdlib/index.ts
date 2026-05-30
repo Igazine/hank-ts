@@ -1,52 +1,25 @@
-import { Value, ValueType, NativeFunc, Expr, Resource, HankError, IHankExtension } from '../Types.js';
+import { Value, ValueType, NativeFunc, Expr, Resource, HankError, IHankExtension, ExecutionContext } from '../Types.js';
 import { HankErrorRegistry } from '../ErrorRegistry.js';
 
 export class StdLib implements IHankExtension {
     public readonly name = "StdLib";
 
-    /**
-     * Returns the recommended standard library modules.
-     * Developers should register these manually on their Runner.
-     */
     public getModules(): Record<string, Record<string, NativeFunc>> {
         const valToString = (v: Value): string => {
             switch (v.type) {
                 case ValueType.String: return v.value;
-                case ValueType.Number: return v.value.toString();
+                case ValueType.Number: {
+                    let s = v.value.toString();
+                    if (s.endsWith('.0')) s = s.substring(0, s.length - 2);
+                    return s;
+                }
                 case ValueType.Void: return 'Void';
                 case ValueType.Array: return '[Array]';
                 case ValueType.Object: return '{Object}';
-                case ValueType.Opaque: return `[Opaque:${v.label || 'Unknown'}]`;
+                case ValueType.Opaque: return `[Opaque:${v.label}]`;
                 case ValueType.Task: return '[Task]';
-                default: return 'null';
-            }
-        };
-
-        const mapAnyToHank = (v: any): Value => {
-            if (v === null || v === undefined) return { type: ValueType.Void };
-            if (typeof v === 'number') return { type: ValueType.Number, value: v };
-            if (typeof v === 'string') return { type: ValueType.String, value: v };
-            if (typeof v === 'boolean') return v ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void };
-            if (Array.isArray(v)) return { type: ValueType.Array, value: v.map(i => mapAnyToHank(i)) };
-            if (typeof v === 'object') {
-                const map = new Map<string, Value>();
-                for (const [k, val] of Object.entries(v)) map.set(k, mapAnyToHank(val));
-                return { type: ValueType.Object, value: map };
-            }
-            return { type: ValueType.Void };
-        };
-
-        const mapHankToAny = (v: Value): any => {
-            switch (v.type) {
-                case ValueType.Number: return v.value;
-                case ValueType.String: return v.value;
-                case ValueType.Array: return v.value.map((i: any) => mapHankToAny(i));
-                case ValueType.Object:
-                    const obj: any = {};
-                    (v as any).value.forEach((val: any, k: any) => { obj[k] = mapHankToAny(val); });
-                    return obj;
-                case ValueType.Opaque: return null; // Non-serializable
-                default: return null;
+                case ValueType.Error: return `[Error:${v.code}]`;
+                default: return 'Void';
             }
         };
 
@@ -62,34 +35,32 @@ export class StdLib implements IHankExtension {
                     return true;
                 case ValueType.Object:
                     if (a.value.size !== b.value.size) return false;
-                    for (const [k, v1] of a.value) {
-                        const v2 = b.value.get(k);
-                        if (!v2 || !hankEquals(v1, v2)) return false;
-                    }
+                    for (const [k, v] of a.value) if (!b.value.has(k) || !hankEquals(v, b.value.get(k))) return false;
                     return true;
                 case ValueType.Opaque: return a.label === b.label && a.value === b.value;
+                case ValueType.Error:
+                    if (a.code !== b.code || a.args?.length !== b.args?.length) return false;
+                    for (let i = 0; i < (a.args?.length || 0); i++) if (!hankEquals(a.args![i], b.args![i])) return false;
+                    return true;
                 default: return false;
             }
         };
 
         return {
             log: {
-                print: (args) => { console.log(args.map(a => valToString(a)).join(' ')); return { type: ValueType.Void }; },
-                error: (args) => { console.error(args.map(a => valToString(a)).join(' ')); return { type: ValueType.Void }; },
-                warn: (args) => { console.warn(`WARNING: ${args.map(a => valToString(a)).join(' ')}`); return { type: ValueType.Void }; }
+                print: (args) => { console.log(args.map(valToString).join(' ')); return { type: ValueType.Void }; },
+                error: (args) => { console.error(args.map(valToString).join(' ')); return { type: ValueType.Void }; },
+                warn: (args) => { console.warn(`[WARN] ${args.map(valToString).join(' ')}`); return { type: ValueType.Void }; }
             },
             runtime: {
-                halt: (args) => {
-                    let code = 0;
-                    if (args.length > 0 && args[0].type === ValueType.Number) code = (args[0] as any).value;
-                    if (typeof process !== 'undefined') process.exit(code);
-                    return { type: ValueType.Void };
-                },
+                halt: (args) => { process.exit(args.length > 0 && args[0].type === ValueType.Number ? args[0].value : 0); },
                 elapsedTime: () => ({ type: ValueType.Number, value: 0 }),
                 signal: (args) => {
                     if (args.length > 0) console.log(`[SIGNAL] ${valToString(args[0])}`);
                     return { type: ValueType.Void };
-                },
+                }
+            },
+            loop: {
                 while: (args, ctx) => {
                     if (args.length < 2) return { type: ValueType.Void };
                     const cond = args[0];
@@ -97,151 +68,203 @@ export class StdLib implements IHankExtension {
                     let last: Value = { type: ValueType.Void };
                     while (true) {
                         const condVal = ctx.call(cond, []);
+                        if (ctx.isError(condVal)) return condVal;
                         if (condVal.type === ValueType.Void) break;
-                        last = ctx.call(body, []);
+                        
+                        const res = ctx.call(body, []);
+                        if (res.type === ValueType.Opaque && res.label === '__ControlFlow' && String(res.value) === 'Break') break;
+                        if (ctx.isError(res)) return res;
+                        last = res;
                     }
                     return last;
-                }
-            },
-            env: {
-                get: () => ({ type: ValueType.Void }),
-                set: () => ({ type: ValueType.Void }),
-                keys: () => ({ type: ValueType.Array, value: [] })
+                },
+                break: () => ({ type: ValueType.Opaque, label: '__ControlFlow', value: 'Break' })
             },
             str: {
-                length: (args) => args.length === 0 ? { type: ValueType.Void } : { type: ValueType.Number, value: valToString(args[0]).length },
+                length: (args) => {
+                    if (args.length === 0) return { type: ValueType.Void };
+                    if (args[0].type !== ValueType.String) {
+                        return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "String" }, { type: ValueType.String, value: ValueType[args[0].type] }, { type: ValueType.String, value: "str.length" }] };
+                    }
+                    return { type: ValueType.Number, value: args[0].value.length };
+                },
                 format: (args) => {
                     if (args.length === 0) return { type: ValueType.Void };
                     let res = valToString(args[0]);
-                    for (let i = 1; i < args.length; i++) { 
-                        res = res.split(`%${i}`).join(valToString(args[i])); 
+                    for (let i = 1; i < args.length; i++) {
+                        res = res.replace(`%${i}`, valToString(args[i]));
                     }
                     return { type: ValueType.String, value: res };
                 },
                 concat: (args) => ({ type: ValueType.String, value: args.map(a => valToString(a)).join('') }),
-                trim: (args) => args.length === 0 ? { type: ValueType.Void } : { type: ValueType.String, value: valToString(args[0]).trim() }
+                trim: (args) => {
+                    if (args.length === 0) return { type: ValueType.Void };
+                    if (args[0].type !== ValueType.String) {
+                        return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "String" }, { type: ValueType.String, value: ValueType[args[0].type] }, { type: ValueType.String, value: "str.trim" }] };
+                    }
+                    return { type: ValueType.String, value: args[0].value.trim() };
+                }
             },
             num: {
                 parse: (args) => {
                     if (args.length === 0) return { type: ValueType.Void };
                     const s = valToString(args[0]);
                     let base = 0;
-                    if (args.length > 1 && args[1].type === ValueType.Number) base = (args[1] as any).value;
-
+                    if (args.length > 1 && args[1].type === ValueType.Number) base = args[1].value;
                     if (base === 0) {
                         if (s.startsWith("0x")) base = 16;
                         else if (s.startsWith("0b")) base = 2;
                         else if (s.startsWith("0o")) base = 8;
                         else base = 10;
                     }
-
                     const n = parseInt(s, base);
-                    if (isNaN(n)) {
-                        if (base === 0 || base === 10) {
-                            const f = parseFloat(s);
-                            return isNaN(f) ? { type: ValueType.Void } : { type: ValueType.Number, value: f };
-                        }
-                        return { type: ValueType.Void };
-                    }
+                    if (isNaN(n)) return { type: ValueType.Void };
                     return { type: ValueType.Number, value: n };
                 },
                 format: (args) => {
                     if (args.length === 0 || args[0].type !== ValueType.Number) return { type: ValueType.Void };
-                    const n = (args[0] as any).value;
+                    const n = args[0].value;
                     let base = 10;
-                    if (args.length > 1 && args[1].type === ValueType.Number) base = (args[1] as any).value;
+                    if (args.length > 1 && args[1].type === ValueType.Number) base = args[1].value;
                     if (base < 2 || base > 36) return { type: ValueType.Void };
                     return { type: ValueType.String, value: n.toString(base) };
                 }
             },
             math: {
-                add: (args) => ({ type: ValueType.Number, value: args.reduce((sum, a) => sum + (a.type === ValueType.Number ? (a as any).value : 0), 0) }),
-                sub: (args) => (args.length < 2 || args[0].type !== ValueType.Number || args[1].type !== ValueType.Number) ? { type: ValueType.Void } : { type: ValueType.Number, value: (args[0] as any).value - (args[1] as any).value },
-                mul: (args) => (args.length === 0) ? { type: ValueType.Number, value: 0 } : { type: ValueType.Number, value: args.reduce((res, a) => res * (a.type === ValueType.Number ? (a as any).value : 1), 1) },
-                div: (args) => (args.length < 2 || args[1].type !== ValueType.Number || (args[1] as any).value === 0) ? { type: ValueType.Void } : { type: ValueType.Number, value: (args[0] as any).value / (args[1] as any).value },
-                gt: (args) => (args.length < 2 || args[0].type !== ValueType.Number || args[1].type !== ValueType.Number) ? { type: ValueType.Void } : ((args[0] as any).value > (args[1] as any).value ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void }),
-                lt: (args) => (args.length < 2 || args[0].type !== ValueType.Number || args[1].type !== ValueType.Number) ? { type: ValueType.Void } : ((args[0] as any).value < (args[1] as any).value ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void }),
+                add: (args) => {
+                    let sum = 0;
+                    for (const a of args) {
+                        if (a.type !== ValueType.Number) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Number" }, { type: ValueType.String, value: ValueType[a.type] }, { type: ValueType.String, value: "math.add" }] };
+                        sum += a.value;
+                    }
+                    return { type: ValueType.Number, value: sum };
+                },
+                sub: (args) => {
+                    if (args.length < 2) return { type: ValueType.Void };
+                    if (args[0].type !== ValueType.Number) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Number" }, { type: ValueType.String, value: ValueType[args[0].type] }, { type: ValueType.String, value: "math.sub" }] };
+                    if (args[1].type !== ValueType.Number) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Number" }, { type: ValueType.String, value: ValueType[args[1].type] }, { type: ValueType.String, value: "math.sub" }] };
+                    return { type: ValueType.Number, value: args[0].value - args[1].value };
+                },
+                mul: (args) => {
+                    if (args.length === 0) return { type: ValueType.Number, value: 0 };
+                    let res = 1;
+                    for (const a of args) {
+                        if (a.type !== ValueType.Number) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Number" }, { type: ValueType.String, value: ValueType[a.type] }, { type: ValueType.String, value: "math.mul" }] };
+                        res *= a.value;
+                    }
+                    return { type: ValueType.Number, value: res };
+                },
+                div: (args) => {
+                    if (args.length < 2) return { type: ValueType.Void };
+                    if (args[0].type !== ValueType.Number) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Number" }, { type: ValueType.String, value: ValueType[args[0].type] }, { type: ValueType.String, value: "math.div" }] };
+                    if (args[1].type !== ValueType.Number) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Number" }, { type: ValueType.String, value: ValueType[args[1].type] }, { type: ValueType.String, value: "math.div" }] };
+                    if (args[1].value === 0) return { type: ValueType.Void };
+                    return { type: ValueType.Number, value: args[0].value / args[1].value };
+                },
+                gt: (args) => {
+                    if (args.length < 2) return { type: ValueType.Void };
+                    if (args[0].type !== ValueType.Number) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Number" }, { type: ValueType.String, value: ValueType[args[0].type] }, { type: ValueType.String, value: "math.gt" }] };
+                    if (args[1].type !== ValueType.Number) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Number" }, { type: ValueType.String, value: ValueType[args[1].type] }, { type: ValueType.String, value: "math.gt" }] };
+                    return args[0].value > args[1].value ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void };
+                },
+                lt: (args) => {
+                    if (args.length < 2) return { type: ValueType.Void };
+                    if (args[0].type !== ValueType.Number) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Number" }, { type: ValueType.String, value: ValueType[args[0].type] }, { type: ValueType.String, value: "math.lt" }] };
+                    if (args[1].type !== ValueType.Number) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Number" }, { type: ValueType.String, value: ValueType[args[1].type] }, { type: ValueType.String, value: "math.lt" }] };
+                    return args[0].value < args[1].value ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void };
+                },
                 eq: (args) => (args.length < 2) ? { type: ValueType.Void } : (hankEquals(args[0], args[1]) ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void })
             },
             logic: {
                 and: (args) => {
                     if (args.length === 0) return { type: ValueType.Void };
                     let last: Value = { type: ValueType.Void };
-                    for (const a of args) { if (a.type === ValueType.Void) return { type: ValueType.Void }; last = a; }
+                    for (const a of args) {
+                        if (a.type === ValueType.Void) return { type: ValueType.Void };
+                        last = a;
+                    }
                     return last;
                 },
                 or: (args) => {
-                    for (const a of args) { if (a.type !== ValueType.Void) return a; }
+                    for (const a of args) if (a.type !== ValueType.Void) return a;
                     return { type: ValueType.Void };
                 },
                 eq: (args) => (args.length < 2) ? { type: ValueType.Void } : (hankEquals(args[0], args[1]) ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void })
             },
             arr: {
-                length: (args) => (args.length > 0 && args[0].type === ValueType.Array) ? { type: ValueType.Number, value: (args[0] as any).value.length } : { type: ValueType.Void },
-                get: (args) => (args.length < 2 || args[0].type !== ValueType.Array || args[1].type !== ValueType.Number) ? { type: ValueType.Void } : ((args[0] as any).value[(args[1] as any).value] || { type: ValueType.Void }),
-                push: (args) => { if (args.length >= 2 && args[0].type === ValueType.Array) (args[0] as any).value.push(args[1]); return { type: ValueType.Void }; },
-                pop: (args) => (args.length > 0 && args[0].type === ValueType.Array) ? ((args[0] as any).value.pop() || { type: ValueType.Void }) : { type: ValueType.Void },
+                length: (args) => {
+                    if (args.length === 0) return { type: ValueType.Void };
+                    if (args[0].type !== ValueType.Array) {
+                        return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Array" }, { type: ValueType.String, value: ValueType[args[0].type] }, { type: ValueType.String, value: "arr.length" }] };
+                    }
+                    return { type: ValueType.Number, value: args[0].value.length };
+                },
+                get: (args) => {
+                    if (args.length < 2) return { type: ValueType.Void };
+                    if (args[0].type !== ValueType.Array) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Array" }, { type: ValueType.String, value: ValueType[args[0].type] }, { type: ValueType.String, value: "arr.get" }] };
+                    if (args[1].type !== ValueType.Number) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Number" }, { type: ValueType.String, value: ValueType[args[1].type] }, { type: ValueType.String, value: "arr.get" }] };
+                    return args[0].value[args[1].value] || { type: ValueType.Void };
+                },
+                push: (args) => {
+                    if (args.length < 2) return { type: ValueType.Void };
+                    if (args[0].type !== ValueType.Array) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Array" }, { type: ValueType.String, value: ValueType[args[0].type] }, { type: ValueType.String, value: "arr.push" }] };
+                    args[0].value.push(args[1]);
+                    return { type: ValueType.Void };
+                },
+                pop: (args) => {
+                    if (args.length === 0) return { type: ValueType.Void };
+                    if (args[0].type !== ValueType.Array) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Array" }, { type: ValueType.String, value: ValueType[args[0].type] }, { type: ValueType.String, value: "arr.pop" }] };
+                    return args[0].value.pop() || { type: ValueType.Void };
+                },
                 each: (args, ctx) => {
-                    if (args.length >= 2 && args[0].type === ValueType.Array && args[1].type === ValueType.Task) {
-                        const items = [...(args[0] as any).value];
-                        items.forEach((item, idx) => {
-                            const callArgs = [item, { type: ValueType.Number, value: idx }];
-                            const task = args[1];
-                            if (task.type === ValueType.Task && !task.task!.isNative) {
-                                if (callArgs.length > task.task!.params!.length) callArgs.splice(task.task!.params!.length);
-                            }
-                            ctx.call(args[1], callArgs);
-                        });
+                    if (args.length < 2) return { type: ValueType.Void };
+                    if (args[0].type !== ValueType.Array) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Array" }, { type: ValueType.String, value: ValueType[args[0].type] }, { type: ValueType.String, value: "arr.each" }] };
+                    const items = [...args[0].value];
+                    const task = args[1];
+                    for (let i = 0; i < items.length; i++) {
+                        const res = ctx.call(task, [items[i], { type: ValueType.Number, value: i }]);
+                        if (res.type === ValueType.Opaque && res.label === '__ControlFlow' && String(res.value) === 'Break') break;
+                        if (ctx.isError(res)) return res;
                     }
                     return { type: ValueType.Void };
                 }
             },
             obj: {
-                get: (args) => (args.length >= 2 && args[0].type === ValueType.Object) ? ((args[0] as any).value.get(valToString(args[1])) || { type: ValueType.Void }) : { type: ValueType.Void },
-                keys: (args) => (args.length > 0 && args[0].type === ValueType.Object) ? { type: ValueType.Array, value: Array.from((args[0] as any).value.keys()).map(k => ({ type: ValueType.String, value: k } as Value)) } : { type: ValueType.Void }
-            },
-            json: {
-                parse: (args) => {
-                    if (args.length === 0) return { type: ValueType.Void };
-                    try { return mapAnyToHank(JSON.parse(valToString(args[0]))); } catch (e) { return { type: ValueType.Void }; }
+                get: (args) => {
+                    if (args.length < 2 || args[0].type !== ValueType.Object) return { type: ValueType.Void };
+                    return args[0].value.get(valToString(args[1])) || { type: ValueType.Void };
                 },
-                stringify: (args) => {
-                    if (args.length === 0) return { type: ValueType.Void };
-                    const checkOpaque = (val: Value): boolean => {
-                        if (val.type === ValueType.Opaque) return true;
-                        if (val.type === ValueType.Array) return val.value.some((i: any) => checkOpaque(i));
-                        if (val.type === ValueType.Object) return Array.from(val.value.values()).some((v: any) => checkOpaque(v));
-                        return false;
-                    };
-                    if (checkOpaque(args[0])) return { type: ValueType.Void };
-                    try { return { type: ValueType.String, value: JSON.stringify(mapHankToAny(args[0])) }; } catch (e) { return { type: ValueType.Void }; }
-                }
-            },
-            regex: {
-                parse: (args) => {
-                    if (args.length === 0) return { type: ValueType.Void };
-                    const pattern = valToString(args[0]);
-                    const flags = args.length > 1 ? valToString(args[1]) : "";
-                    let jsFlags = "";
-                    if (flags.includes('i')) jsFlags += "i";
-                    if (flags.includes('m')) jsFlags += "m";
-                    try { return { type: ValueType.Opaque, label: 'RegExp', value: new RegExp(pattern, jsFlags) }; } catch (e) { return { type: ValueType.Void }; }
-                },
-                match: (args) => {
-                    if (args.length < 2) return { type: ValueType.Void };
-                    const s = valToString(args[0]);
-                    const pattern = args[1];
-                    if (pattern.type === ValueType.Opaque && pattern.label === 'RegExp') return pattern.value.test(s) ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void };
-                    return s.includes(valToString(pattern)) ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void };
-                },
-                replace: (args) => {
+                set: (args) => {
                     if (args.length < 3) return { type: ValueType.Void };
-                    const s = valToString(args[0]);
-                    const pattern = args[1];
-                    const repl = valToString(args[2]);
-                    if (pattern.type === ValueType.Opaque && pattern.label === 'RegExp') return { type: ValueType.String, value: s.replace(pattern.value, repl) };
-                    return { type: ValueType.String, value: s.split(valToString(pattern)).join(repl) };
-                }
+                    if (args[0].type !== ValueType.Object) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Object" }, { type: ValueType.String, value: ValueType[args[0].type] }, { type: ValueType.String, value: "obj.set" }] };
+                    args[0].value.set(valToString(args[1]), args[2]);
+                    return { type: ValueType.Void };
+                },
+                keys: (args) => (args.length > 0 && args[0].type === ValueType.Object) ? { type: ValueType.Array, value: Array.from(args[0].value.keys()).map(k => ({ type: ValueType.String, value: k })) } : { type: ValueType.Void }
+            },
+            err: {
+                code: (args) => {
+                    if (args.length === 0) return { type: ValueType.Void };
+                    if (args[0].type !== ValueType.Error) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Error" }, { type: ValueType.String, value: ValueType[args[0].type] }, { type: ValueType.String, value: "err.code" }] };
+                    return { type: ValueType.Number, value: args[0].code };
+                },
+                message: (args, ctx) => {
+                    if (args.length === 0) return { type: ValueType.Void };
+                    if (args[0].type !== ValueType.Error) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Error" }, { type: ValueType.String, value: ValueType[args[0].type] }, { type: ValueType.String, value: "err.message" }] };
+                    const err = args[0];
+                    const loc = ctx.getLocalization();
+                    let tmpl = loc[err.code!] || "Unknown Error";
+                    (err.args || []).forEach((a, i) => {
+                        tmpl = tmpl.replace(`{${i}}`, valToString(a));
+                    });
+                    return { type: ValueType.String, value: tmpl };
+                },
+                args: (args) => {
+                    if (args.length === 0) return { type: ValueType.Void };
+                    if (args[0].type !== ValueType.Error) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Error" }, { type: ValueType.String, value: ValueType[args[0].type] }, { type: ValueType.String, value: "err.args" }] };
+                    return { type: ValueType.Array, value: args[0].args || [] };
+                },
+                isError: (args) => (args.length > 0 && args[0].type === ValueType.Error) ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void }
             }
         };
     }
