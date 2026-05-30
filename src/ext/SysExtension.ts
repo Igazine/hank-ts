@@ -34,7 +34,7 @@ export class SysExtension implements IHankExtension {
                     map.set('total', { type: ValueType.Number, value: mem.heapTotal });
                     map.set('free', { type: ValueType.Number, value: mem.heapTotal - mem.heapUsed });
                     map.set('used', { type: ValueType.Number, value: mem.heapUsed });
-                    return { type: ValueType.Object, value: map };
+                    return { type: ValueType.Map, value: map };
                 },
                 cpu: () => ({ type: ValueType.Number, value: 0 })
             },
@@ -73,7 +73,7 @@ export class SysExtension implements IHankExtension {
                         map.set('size', { type: ValueType.Number, value: s.size });
                         map.set('mtime', { type: ValueType.Number, value: s.mtime.getTime() });
                         map.set('isDir', s.isDirectory() ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void });
-                        return { type: ValueType.Object, value: map };
+                        return { type: ValueType.Map, value: map };
                     } catch (e) { return { type: ValueType.Void }; }
                 }
             },
@@ -91,7 +91,7 @@ export class SysExtension implements IHankExtension {
                         map.set('code', { type: ValueType.Number, value: res.status });
                         map.set('stdout', { type: ValueType.String, value: res.stdout });
                         map.set('stderr', { type: ValueType.String, value: res.stderr });
-                        return { type: ValueType.Object, value: map };
+                        return { type: ValueType.Map, value: map };
                     } catch (e) { return { type: ValueType.Void }; }
                 }
             }

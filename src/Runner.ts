@@ -11,7 +11,6 @@ import { HankErrorRegistry } from './ErrorRegistry.js';
  */
 export class Runner {
     private resourceCache: Map<string, Resource> = new Map();
-    private macroMap: Map<string, Expr> = new Map();
     public coreScope: Scope = new HankScope();
     public localization: Record<number, string> = {};
 
@@ -37,7 +36,7 @@ export class Runner {
                 task: { isNative: true, name: `${name}.${tName}`, native }
             });
         }
-        this.coreScope.set(name, { type: ValueType.Object, value: moduleObj });
+        this.coreScope.set(name, { type: ValueType.Map, value: moduleObj });
     }
 
     /**
@@ -79,19 +78,12 @@ export class Runner {
         const lexer = new Lexer(activeResource.content);
         const parser = new Parser(lexer.tokenize(), activeResource.id, (macroPath) => {
             const mRes = activeResource.resolve(macroPath);
-            // This is problematic in a sync constructor.
-            // But we know that Runner.load is called recursively before Parser.parse.
-            // So the macro SHOULD already be in the cache? No, not necessarily.
-            
-            // Wait, HAL says the Parser MUST request the resource from the Runner.
-            // In TS, we'll just throw if it's not pre-loaded, which is what Runner should do.
-            const resolved = activeResource.resolve(macroPath);
-            const found = this.resourceCache.get(resolved.id);
+            const found = this.resourceCache.get(mRes.id);
             if (!found || !found.ast) throw new Error(`Macro not pre-loaded: ${macroPath}`);
             return found.ast;
         });
 
-        // Pre-scan for macros to ensure they are loaded before parsing
+        // Pre-scan for macros
         const tokens = lexer.tokenize();
         for (let i = 0; i < tokens.length; i++) {
             if (tokens[i].type === TokenType.At && tokens[i+1]?.type === TokenType.String) {
@@ -101,7 +93,7 @@ export class Runner {
             }
         }
 
-        activeResource.ast = parser.parse();
+        activeResource.ast = await parser.parse();
         return activeResource.ast;
     }
 

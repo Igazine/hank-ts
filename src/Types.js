@@ -4,7 +4,7 @@ export var ValueType;
     ValueType[ValueType["Number"] = 1] = "Number";
     ValueType[ValueType["String"] = 2] = "String";
     ValueType[ValueType["Array"] = 3] = "Array";
-    ValueType[ValueType["Object"] = 4] = "Object";
+    ValueType[ValueType["Map"] = 4] = "Map";
     ValueType[ValueType["Opaque"] = 5] = "Opaque";
     ValueType[ValueType["Task"] = 6] = "Task";
     ValueType[ValueType["Error"] = 7] = "Error";

@@ -3,7 +3,7 @@ export enum ValueType {
     Number,
     String,
     Array,
-    Object,
+    Map,
     Opaque,
     Task,
     Error
@@ -79,11 +79,11 @@ export type Expr =
     | { kind: 'Assign', name: string, value: Expr, td: TokenData }
     | { kind: 'Literal', value: Value, td: TokenData }
     | { kind: 'Ident', name: string, isCore: boolean, td: TokenData }
-    | { kind: 'Field', object: Expr, fieldName: string, td: TokenData }
+    | { kind: 'Field', collection: Expr, fieldName: string, td: TokenData }
     | { kind: 'FuncDef', params: Param[], body: Expr, td: TokenData }
     | { kind: 'FuncCall', target: Expr, args: Expr[], td: TokenData }
     | { kind: 'UnOp', op: string, target: Expr, td: TokenData }
-    | { kind: 'Object', fields: Map<string, Expr>, td: TokenData }
+    | { kind: 'Map', fields: Map<string, Expr>, td: TokenData }
     | { kind: 'Array', items: Expr[], td: TokenData }
     | { kind: 'FlowControl', condition: Expr, success: Expr, fallback?: Expr, rescue?: Expr, catchVar?: string, td: TokenData }
     | { kind: 'Error', code: number, args: Expr[], td: TokenData };

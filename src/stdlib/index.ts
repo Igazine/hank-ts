@@ -15,7 +15,7 @@ export class StdLib implements IHankExtension {
                 }
                 case ValueType.Void: return 'Void';
                 case ValueType.Array: return '[Array]';
-                case ValueType.Object: return '{Object}';
+                case ValueType.Map: return '[Map]';
                 case ValueType.Opaque: return `[Opaque:${v.label}]`;
                 case ValueType.Task: return '[Task]';
                 case ValueType.Error: return `[Error:${v.code}]`;
@@ -33,7 +33,7 @@ export class StdLib implements IHankExtension {
                     if (a.value.length !== b.value.length) return false;
                     for (let i = 0; i < a.value.length; i++) if (!hankEquals(a.value[i], b.value[i])) return false;
                     return true;
-                case ValueType.Object:
+                case ValueType.Map:
                     if (a.value.size !== b.value.size) return false;
                     for (const [k, v] of a.value) if (!b.value.has(k) || !hankEquals(v, b.value.get(k))) return false;
                     return true;
@@ -229,18 +229,67 @@ export class StdLib implements IHankExtension {
                     return { type: ValueType.Void };
                 }
             },
-            obj: {
+            map: {
                 get: (args) => {
-                    if (args.length < 2 || args[0].type !== ValueType.Object) return { type: ValueType.Void };
+                    if (args.length < 2 || args[0].type !== ValueType.Map) return { type: ValueType.Void };
                     return args[0].value.get(valToString(args[1])) || { type: ValueType.Void };
                 },
                 set: (args) => {
                     if (args.length < 3) return { type: ValueType.Void };
-                    if (args[0].type !== ValueType.Object) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Object" }, { type: ValueType.String, value: ValueType[args[0].type] }, { type: ValueType.String, value: "obj.set" }] };
+                    if (args[0].type !== ValueType.Map) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Map" }, { type: ValueType.String, value: ValueType[args[0].type] }, { type: ValueType.String, value: "map.set" }] };
                     args[0].value.set(valToString(args[1]), args[2]);
                     return { type: ValueType.Void };
                 },
-                keys: (args) => (args.length > 0 && args[0].type === ValueType.Object) ? { type: ValueType.Array, value: Array.from(args[0].value.keys()).map(k => ({ type: ValueType.String, value: k })) } : { type: ValueType.Void }
+                keys: (args) => (args.length > 0 && args[0].type === ValueType.Map) ? { type: ValueType.Array, value: Array.from(args[0].value.keys()).map(k => ({ type: ValueType.String, value: k })) } : { type: ValueType.Void }
+            },
+            json: {
+                parse: (args) => {
+                    if (args.length === 0) return { type: ValueType.Void };
+                    const s = valToString(args[0]);
+                    try {
+                        const parsed = JSON.parse(s);
+                        const mapAnyToHank = (v: any): Value => {
+                            if (v === null || v === undefined) return { type: ValueType.Void };
+                            if (typeof v === 'number') return { type: ValueType.Number, value: v };
+                            if (typeof v === 'string') return { type: ValueType.String, value: v };
+                            if (typeof v === 'boolean') return { type: ValueType.Number, value: v ? 1 : 0 };
+                            if (Array.isArray(v)) return { type: ValueType.Array, value: v.map(mapAnyToHank) };
+                            if (typeof v === 'object') {
+                                const m = new Map<string, Value>();
+                                for (const [key, val] of Object.entries(v)) {
+                                    m.set(key, mapAnyToHank(val));
+                                }
+                                return { type: ValueType.Map, value: m };
+                            }
+                            return { type: ValueType.Void };
+                        };
+                        return mapAnyToHank(parsed);
+                    } catch (e) {
+                        return { type: ValueType.Void };
+                    }
+                },
+                stringify: (args) => {
+                    if (args.length === 0) return { type: ValueType.Void };
+                    const mapHankToAny = (v: Value): any => {
+                        switch (v.type) {
+                            case ValueType.Number: return v.value;
+                            case ValueType.String: return v.value;
+                            case ValueType.Array: return v.value.map(mapHankToAny);
+                            case ValueType.Map:
+                                const obj: any = {};
+                                for (const [k, val] of v.value) {
+                                    obj[k] = mapHankToAny(val);
+                                }
+                                return obj;
+                            default: return null;
+                        }
+                    };
+                    try {
+                        return { type: ValueType.String, value: JSON.stringify(mapHankToAny(args[0])) };
+                    } catch (e) {
+                        return { type: ValueType.Void };
+                    }
+                }
             },
             err: {
                 code: (args) => {

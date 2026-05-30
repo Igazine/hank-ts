@@ -142,28 +142,28 @@ export class Interpreter implements ExecutionContext {
             }
 
             case 'Field': {
-                const objRes = this.evalInScope(node.object, scope);
-                if (objRes.kind !== 'Value') return objRes;
-                const obj = objRes.value;
+                const collRes = this.evalInScope(node.collection, scope);
+                if (collRes.kind !== 'Value') return collRes;
+                const coll = collRes.value;
 
-                if (obj.type === ValueType.Object) {
-                    return { kind: 'Value', value: obj.value.get(node.fieldName) || { type: ValueType.Void } };
-                } else if (obj.type === ValueType.Array && node.fieldName === 'length') {
-                    return { kind: 'Value', value: { type: ValueType.Number, value: obj.value.length } };
-                } else if (obj.type === ValueType.String && node.fieldName === 'length') {
-                    return { kind: 'Value', value: { type: ValueType.Number, value: obj.value.length } };
+                if (coll.type === ValueType.Map) {
+                    return { kind: 'Value', value: coll.value.get(node.fieldName) || { type: ValueType.Void } };
+                } else if (coll.type === ValueType.Array && node.fieldName === 'length') {
+                    return { kind: 'Value', value: { type: ValueType.Number, value: coll.value.length } };
+                } else if (coll.type === ValueType.String && node.fieldName === 'length') {
+                    return { kind: 'Value', value: { type: ValueType.Number, value: coll.value.length } };
                 }
                 return { kind: 'Value', value: { type: ValueType.Void } };
             }
 
-            case 'Object': {
+            case 'Map': {
                 const map = new Map<string, Value>();
                 for (const [k, vExpr] of node.fields) {
                     const res = this.evalInScope(vExpr, scope);
                     if (res.kind === 'Value') map.set(k, res.value);
                     else return res;
                 }
-                return { kind: 'Value', value: { type: ValueType.Object, value: map } };
+                return { kind: 'Value', value: { type: ValueType.Map, value: map } };
             }
 
             case 'Array': {
@@ -224,7 +224,7 @@ export class Interpreter implements ExecutionContext {
         if (task.task.isNative) {
             try {
                 const res = task.task.native!(args, this);
-                if (res.type === ValueType.Opaque && res.label === '__ControlFlow' && res.value === 'Break') {
+                if (res.type === ValueType.Opaque && res.label === '__ControlFlow' && String(res.value) === 'Break') {
                     return { kind: 'Break' };
                 }
                 if (res.type === ValueType.Error) return { kind: 'Error', error: res };
@@ -297,7 +297,7 @@ export class Interpreter implements ExecutionContext {
             }
             case ValueType.Void: return 'Void';
             case ValueType.Array: return '[Array]';
-            case ValueType.Object: return '{Object}';
+            case ValueType.Map: return '[Map]';
             case ValueType.Opaque: return `[Opaque:${v.label}]`;
             case ValueType.Task: return '[Task]';
             case ValueType.Error: return `[Error:${v.code}]`;
