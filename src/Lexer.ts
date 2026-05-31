@@ -14,7 +14,6 @@ export enum TokenType {
     Hash,      // #
     Not,       // !
     Caret,     // ^
-    Dot,       // .
     Comma,     // ,
     
     LParen,    // (
@@ -98,7 +97,6 @@ export class Lexer {
                 case '#': this.addToken(TokenType.Hash, '#'); break;
                 case '!': this.addToken(TokenType.Not, '!'); break;
                 case '^': this.addToken(TokenType.Caret, '^'); break;
-                case '.': this.addToken(TokenType.Dot, '.'); break;
                 case ',': this.addToken(TokenType.Comma, ','); break;
                 case '(': this.addToken(TokenType.LParen, '('); break;
                 case ')': this.addToken(TokenType.RParen, ')'); break;

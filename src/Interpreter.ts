@@ -141,21 +141,6 @@ export class Interpreter implements ExecutionContext {
                 return this.callInternal(target, args, scope);
             }
 
-            case 'Field': {
-                const collRes = this.evalInScope(node.collection, scope);
-                if (collRes.kind !== 'Value') return collRes;
-                const coll = collRes.value;
-
-                if (coll.type === ValueType.Map) {
-                    return { kind: 'Value', value: coll.value.get(node.fieldName) || { type: ValueType.Void } };
-                } else if (coll.type === ValueType.Array && node.fieldName === 'length') {
-                    return { kind: 'Value', value: { type: ValueType.Number, value: coll.value.length } };
-                } else if (coll.type === ValueType.String && node.fieldName === 'length') {
-                    return { kind: 'Value', value: { type: ValueType.Number, value: coll.value.length } };
-                }
-                return { kind: 'Value', value: { type: ValueType.Void } };
-            }
-
             case 'Map': {
                 const map = new Map<string, Value>();
                 for (const [k, vExpr] of node.fields) {

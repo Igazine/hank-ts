@@ -175,10 +175,7 @@ export class Parser {
         while (true) {
             const t = this.peek();
             const td: TokenData = { line: t.line, column: t.column, lineText: t.lineText };
-            if (t.type === TokenType.Dot) {
-                this.consume(TokenType.Dot);
-                expr = { kind: 'Field', collection: expr, fieldName: this.consumeIdentifier(), td };
-            } else if (t.type === TokenType.LParen) {
+            if (t.type === TokenType.LParen) {
                 expr = { kind: 'FuncCall', target: expr, args: this.parseArgList(), td };
             } else break;
         }

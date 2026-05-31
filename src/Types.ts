@@ -79,7 +79,6 @@ export type Expr =
     | { kind: 'Assign', name: string, value: Expr, td: TokenData }
     | { kind: 'Literal', value: Value, td: TokenData }
     | { kind: 'Ident', name: string, isCore: boolean, td: TokenData }
-    | { kind: 'Field', collection: Expr, fieldName: string, td: TokenData }
     | { kind: 'FuncDef', params: Param[], body: Expr, td: TokenData }
     | { kind: 'FuncCall', target: Expr, args: Expr[], td: TokenData }
     | { kind: 'UnOp', op: string, target: Expr, td: TokenData }
@@ -100,7 +99,7 @@ export interface IHankSerializable {
 
 export interface IHankExtension {
     readonly name: string;
-    getModules(): Record<string, Record<string, NativeFunc>>;
+    getTasks(): Record<string, NativeFunc>;
 }
 
 export enum HankError {

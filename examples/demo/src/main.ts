@@ -35,6 +35,15 @@ async function main() {
 
     try {
         const res = await runner.run(resource, hankArgs);
+        if (res.type === ValueType.Error) {
+            const loc = runner.localization;
+            let tmpl = loc[res.code!] || "Unknown Error";
+            (res.args || []).forEach((a, i) => {
+                tmpl = tmpl.replace(`{${i}}`, String(a.value || "Void"));
+            });
+            process.stderr.write(`Error ${res.code}: ${tmpl}\n`);
+            process.exit(1);
+        }
         if (res.type === ValueType.Number) {
             process.exit(Math.floor(res.value));
         }
@@ -101,7 +110,15 @@ async function runConformance(workspaceRoot: string) {
             args.push({ type: ValueType.String, value: "Tamas" });
         }
         try {
-            await runner.run(resource, args);
+            const res = await runner.run(resource, args);
+            if (res.type === ValueType.Error) {
+                const loc = runner.localization;
+                let tmpl = loc[res.code!] || "Unknown Error";
+                (res.args || []).forEach((a, i) => {
+                    tmpl = tmpl.replace(`{${i}}`, String(a.value || "Void"));
+                });
+                process.stderr.write(`Error ${res.code}: ${tmpl}\n`);
+            }
         } catch (e) {
             handleError(e);
         }

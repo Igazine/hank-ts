@@ -26,27 +26,22 @@ export class Runner {
     }
 
     /**
-     * Registers a set of native tasks under a module name.
+     * Registers a set of native tasks.
      */
-    registerModule(name: string, tasks: Record<string, NativeFunc>) {
-        const moduleObj = new Map<string, Value>();
+    registerTasks(tasks: Record<string, NativeFunc>) {
         for (const [tName, native] of Object.entries(tasks)) {
-            moduleObj.set(tName, {
+            this.coreScope.set(tName, {
                 type: ValueType.Task,
-                task: { isNative: true, name: `${name}.${tName}`, native }
+                task: { isNative: true, name: tName, native }
             });
         }
-        this.coreScope.set(name, { type: ValueType.Map, value: moduleObj });
     }
 
     /**
-     * Registers a Hank Extension and all its modules.
+     * Registers a Hank Extension and all its tasks.
      */
     registerExtension(ext: IHankExtension) {
-        const mods = ext.getModules();
-        for (const [name, tasks] of Object.entries(mods)) {
-            this.registerModule(name, tasks);
-        }
+        this.registerTasks(ext.getTasks());
     }
 
     /**
