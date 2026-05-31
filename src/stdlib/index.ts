@@ -3,6 +3,7 @@ import { HankErrorRegistry } from '../ErrorRegistry.js';
 
 export class StdLib implements IHankExtension {
     public readonly name = "StdLib";
+    public envState: Map<string, Value> = new Map();
 
     public getTasks(): Record<string, NativeFunc> {
         const valToString = (v: Value): string => {
@@ -85,9 +86,21 @@ export class StdLib implements IHankExtension {
             loop_break: () => ({ type: ValueType.Opaque, label: '__ControlFlow', value: 'Break' }),
 
             // env
-            env_get: (args) => ({ type: ValueType.Void }),
-            env_set: (args) => ({ type: ValueType.Void }),
-            env_keys: (args) => ({ type: ValueType.Array, value: [] }),
+            env_get: (args) => {
+                if (args.length === 0) return { type: ValueType.Void };
+                const key = valToString(args[0]);
+                return this.envState.get(key) || { type: ValueType.Void };
+            },
+            env_set: (args) => {
+                if (args.length < 2) return { type: ValueType.Void };
+                const key = valToString(args[0]);
+                this.envState.set(key, args[1]);
+                return { type: ValueType.Void };
+            },
+            env_keys: () => ({
+                type: ValueType.Array,
+                value: Array.from(this.envState.keys()).map(k => ({ type: ValueType.String, value: k }))
+            }),
 
             // str
             str_length: (args) => {
