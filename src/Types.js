@@ -47,14 +47,23 @@ export var HankError;
     HankError[HankError["BitwiseOutOfBounds"] = 4005] = "BitwiseOutOfBounds";
     HankError[HankError["GenericRuntimeError"] = 4006] = "GenericRuntimeError";
     HankError[HankError["TypeMismatch"] = 4007] = "TypeMismatch";
+    HankError[HankError["InstructionLimitExceeded"] = 4008] = "InstructionLimitExceeded";
 })(HankError || (HankError = {}));
 export class HankErrorValue extends Error {
     code;
     message;
-    constructor(code, message) {
+    filename;
+    line;
+    column;
+    lineText;
+    constructor(code, message, filename, line, column, lineText) {
         super(message);
         this.code = code;
         this.message = message;
+        this.filename = filename;
+        this.line = line;
+        this.column = column;
+        this.lineText = lineText;
         this.name = 'HankError';
     }
 }

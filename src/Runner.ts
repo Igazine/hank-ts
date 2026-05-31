@@ -4,6 +4,10 @@ import { Parser } from './Parser.js';
 import { Value, ValueType, Scope, NativeFunc, Expr, Resource, HankError, IHankExtension } from './Types.js';
 import { HankErrorRegistry } from './ErrorRegistry.js';
 
+export interface RunnerOptions {
+    maxInstructions?: number;
+}
+
 /**
  * A Hank Host Runner.
  * Handles resource orchestration, macro resolution, and AST caching.
@@ -13,8 +17,11 @@ export class Runner {
     private resourceCache: Map<string, Resource> = new Map();
     public coreScope: Scope = new HankScope();
     public localization: Record<number, string> = {};
+    public options: RunnerOptions;
 
-    constructor() {}
+    constructor(options?: RunnerOptions) {
+        this.options = options || { maxInstructions: 0 };
+    }
 
     /**
      * Registers a localization map (Code -> Template).
@@ -105,7 +112,7 @@ export class Runner {
     async run(resource: Resource, args: Value[] = []): Promise<Value> {
         const ast = await this.load(resource);
 
-        const interpreter = new Interpreter(undefined, this.coreScope, this.localization);
+        const interpreter = new Interpreter(undefined, this.coreScope, this.localization, this.options.maxInstructions);
         const scriptTask = interpreter.run(ast);
 
         if (scriptTask.type === ValueType.Task) {

@@ -379,7 +379,7 @@ export class Parser {
 
     private peekTd(): TokenData {
         const t = this.peek();
-        return { line: t.line, column: t.column, lineText: t.lineText };
+        return { line: t.line, column: t.column, lineText: t.lineText, filename: t.filename };
     }
 
     private skipNewlines(): void {

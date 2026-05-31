@@ -183,6 +183,13 @@ export class StdLib implements IHankExtension {
                 if (args[1].value === 0) return { type: ValueType.Void };
                 return { type: ValueType.Number, value: args[0].value / args[1].value };
             },
+            math_mod: (args) => {
+                if (args.length < 2) return { type: ValueType.Void };
+                if (args[0].type !== ValueType.Number) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Number" }, { type: ValueType.String, value: typeToString(args[0].type) }, { type: ValueType.String, value: "math_mod" }] };
+                if (args[1].type !== ValueType.Number) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Number" }, { type: ValueType.String, value: typeToString(args[1].type) }, { type: ValueType.String, value: "math_mod" }] };
+                if (args[1].value === 0) return { type: ValueType.Void };
+                return { type: ValueType.Number, value: args[0].value % args[1].value };
+            },
             math_gt: (args) => {
                 if (args.length < 2) return { type: ValueType.Void };
                 if (args[0].type !== ValueType.Number) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Number" }, { type: ValueType.String, value: typeToString(args[0].type) }, { type: ValueType.String, value: "math_gt" }] };
@@ -213,6 +220,16 @@ export class StdLib implements IHankExtension {
             },
             logic_eq: (args) => (args.length < 2) ? { type: ValueType.Void } : (hankEquals(args[0], args[1]) ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void }),
 
+            // type
+            type_isVoid: (args) => (args.length > 0 && args[0].type === ValueType.Void) ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void },
+            type_isNumber: (args) => (args.length > 0 && args[0].type === ValueType.Number) ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void },
+            type_isString: (args) => (args.length > 0 && args[0].type === ValueType.String) ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void },
+            type_isArray: (args) => (args.length > 0 && args[0].type === ValueType.Array) ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void },
+            type_isMap: (args) => (args.length > 0 && args[0].type === ValueType.Map) ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void },
+            type_isOpaque: (args) => (args.length > 0 && args[0].type === ValueType.Opaque) ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void },
+            type_isTask: (args) => (args.length > 0 && args[0].type === ValueType.Task) ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void },
+            type_isError: (args) => (args.length > 0 && args[0].type === ValueType.Error) ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void },
+
             // arr
             arr_length: (args) => {
                 if (args.length === 0) return { type: ValueType.Void };
@@ -238,6 +255,50 @@ export class StdLib implements IHankExtension {
                 if (args[0].type !== ValueType.Array) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Array" }, { type: ValueType.String, value: typeToString(args[0].type) }, { type: ValueType.String, value: "arr_pop" }] };
                 return args[0].value.pop() || { type: ValueType.Void };
             },
+            arr_shift: (args) => {
+                if (args.length === 0) return { type: ValueType.Void };
+                if (args[0].type !== ValueType.Array) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Array" }, { type: ValueType.String, value: typeToString(args[0].type) }, { type: ValueType.String, value: "arr_shift" }] };
+                return args[0].value.shift() || { type: ValueType.Void };
+            },
+            arr_unshift: (args) => {
+                if (args.length < 2) return { type: ValueType.Void };
+                if (args[0].type !== ValueType.Array) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Array" }, { type: ValueType.String, value: typeToString(args[0].type) }, { type: ValueType.String, value: "arr_unshift" }] };
+                args[0].value.unshift(args[1]);
+                return { type: ValueType.Void };
+            },
+            arr_slice: (args) => {
+                if (args.length < 2) return { type: ValueType.Void };
+                if (args[0].type !== ValueType.Array) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Array" }, { type: ValueType.String, value: typeToString(args[0].type) }, { type: ValueType.String, value: "arr_slice" }] };
+                const start = args[1].type === ValueType.Number ? args[1].value : 0;
+                const end = args.length > 2 && args[2].type === ValueType.Number ? args[2].value : undefined;
+                return { type: ValueType.Array, value: args[0].value.slice(start, end) };
+            },
+            arr_sort: (args, ctx) => {
+                if (args.length === 0) return { type: ValueType.Void };
+                if (args[0].type !== ValueType.Array) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Array" }, { type: ValueType.String, value: typeToString(args[0].type) }, { type: ValueType.String, value: "arr_sort" }] };
+                const arr = args[0].value;
+                const task = args.length > 1 ? args[1] : undefined;
+                if (task) {
+                    arr.sort((a: any, b: any) => {
+                        const res = ctx.call(task, [a, b]);
+                        return res.type === ValueType.Number ? res.value : 0;
+                    });
+                } else {
+                    arr.sort((a: any, b: any) => {
+                        const sa = valToString(a);
+                        const sb = valToString(b);
+                        return sa === sb ? 0 : (sa < sb ? -1 : 1);
+                    });
+                }
+                return { type: ValueType.Void };
+            },
+            arr_indexof: (args) => {
+                if (args.length < 2) return { type: ValueType.Void };
+                if (args[0].type !== ValueType.Array) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Array" }, { type: ValueType.String, value: typeToString(args[0].type) }, { type: ValueType.String, value: "arr_indexof" }] };
+                const target = args[1];
+                const idx = args[0].value.findIndex((v: any) => hankEquals(v, target));
+                return idx === -1 ? { type: ValueType.Void } : { type: ValueType.Number, value: idx };
+            },
             arr_each: (args, ctx) => {
                 if (args.length < 2) return { type: ValueType.Void };
                 if (args[0].type !== ValueType.Array) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Array" }, { type: ValueType.String, value: typeToString(args[0].type) }, { type: ValueType.String, value: "arr_each" }] };
@@ -250,6 +311,28 @@ export class StdLib implements IHankExtension {
                 }
                 return { type: ValueType.Void };
             },
+            arr_map: (args, ctx) => {
+                if (args.length < 2 || args[0].type !== ValueType.Array) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Array" }, { type: ValueType.String, value: typeToString(args[0].type) }, { type: ValueType.String, value: "arr_map" }] };
+                const resArr = [];
+                const task = args[1];
+                for (let i = 0; i < args[0].value.length; i++) {
+                    const res = ctx.call(task, [args[0].value[i], { type: ValueType.Number, value: i }]);
+                    if (ctx.isError(res)) return res;
+                    resArr.push(res);
+                }
+                return { type: ValueType.Array, value: resArr };
+            },
+            arr_filter: (args, ctx) => {
+                if (args.length < 2 || args[0].type !== ValueType.Array) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Array" }, { type: ValueType.String, value: typeToString(args[0].type) }, { type: ValueType.String, value: "arr_filter" }] };
+                const resArr = [];
+                const task = args[1];
+                for (let i = 0; i < args[0].value.length; i++) {
+                    const res = ctx.call(task, [args[0].value[i], { type: ValueType.Number, value: i }]);
+                    if (ctx.isError(res)) return res;
+                    if (res.type !== ValueType.Void) resArr.push(args[0].value[i]);
+                }
+                return { type: ValueType.Array, value: resArr };
+            },
 
             // map
             map_get: (args) => {
@@ -261,6 +344,11 @@ export class StdLib implements IHankExtension {
                 if (args[0].type !== ValueType.Map) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Map" }, { type: ValueType.String, value: typeToString(args[0].type) }, { type: ValueType.String, value: "map_set" }] };
                 args[0].value.set(valToString(args[1]), args[2]);
                 return { type: ValueType.Void };
+            },
+            map_remove: (args) => {
+                if (args.length < 2) return { type: ValueType.Void };
+                if (args[0].type !== ValueType.Map) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Map" }, { type: ValueType.String, value: typeToString(args[0].type) }, { type: ValueType.String, value: "map_remove" }] };
+                return args[0].value.delete(valToString(args[1])) ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void };
             },
             map_keys: (args) => (args.length > 0 && args[0].type === ValueType.Map) ? { type: ValueType.Array, value: Array.from(args[0].value.keys()).map(k => ({ type: ValueType.String, value: k })) } : { type: ValueType.Void },
 
@@ -356,7 +444,6 @@ export class StdLib implements IHankExtension {
                 if (args[0].type !== ValueType.Error) return { type: ValueType.Error, code: 4007, args: [{ type: ValueType.String, value: "Error" }, { type: ValueType.String, value: typeToString(args[0].type) }, { type: ValueType.String, value: "err_args" }] };
                 return { type: ValueType.Array, value: args[0].args || [] };
             },
-            err_isError: (args) => (args.length > 0 && args[0].type === ValueType.Error) ? { type: ValueType.Number, value: 1 } : { type: ValueType.Void }
         };
     }
 }

@@ -10,8 +10,9 @@ export type EvalResult =
 export class Interpreter implements ExecutionContext {
     public globalScope: Scope;
     private coreScope: Scope;
+    private instructionCount: number = 0;
 
-    constructor(parentScope?: Scope, coreScope?: Scope, private localization: Record<number, string> = {}) {
+    constructor(parentScope?: Scope, coreScope?: Scope, private localization: Record<number, string> = {}, private maxInstructions: number = 0) {
         this.coreScope = coreScope || new HankScope();
         this.globalScope = new HankScope(parentScope || this.coreScope);
     }
@@ -55,6 +56,13 @@ export class Interpreter implements ExecutionContext {
     }
 
     private evalInScope(node: Expr, scope: Scope): EvalResult {
+        if (this.maxInstructions > 0) {
+            this.instructionCount++;
+            if (this.instructionCount > this.maxInstructions) {
+                return { kind: 'Error', error: { type: ValueType.Error, code: HankError.InstructionLimitExceeded, args: [{ type: ValueType.Number, value: this.maxInstructions }] } };
+            }
+        }
+
         switch (node.kind) {
             case 'Literal':
                 return { kind: 'Value', value: node.value };

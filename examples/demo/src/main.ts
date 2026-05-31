@@ -62,14 +62,15 @@ function handleError(e: any) {
     }
 }
 
-function createRunner(): Runner {
-    const runner = new Runner();
+function createRunner(options?: any): Runner {
+    const runner = new Runner(options);
 
     // 0. Register Localization
     runner.registerLocalization({
         4001: "Target is not a function: {0}",
         4007: "Type Mismatch: Expected {0}, got {1} in {2}",
-        4005: "Value exceeds safe integer bounds: {0} in {1}"
+        4005: "Value exceeds safe integer bounds: {0} in {1}",
+        4008: "Instruction Limit Exceeded: Script reached the maximum allowed AST evaluations ({0})"
     });
 
     // Register Extensions
@@ -99,11 +100,14 @@ async function runConformance(workspaceRoot: string) {
         "test/conformance/18_runtime_module.hank",
         "test/conformance/19_error_handling.hank",
         "test/conformance/20_grammar_hardening.hank",
+        "test/conformance/21_data_functional.hank",
+        "test/conformance/22_instruction_limit.hank",
     ];
 
     for (const t of tests) {
         console.log(`--- Running Conformance: ${t} ---`);
-        const runner = createRunner();
+        const opts = t.includes("22_instruction_limit") ? { maxInstructions: 1000 } : undefined;
+        const runner = createRunner(opts);
         const testPath = path.resolve(workspaceRoot, t);
         const resource = FileResource.create(testPath);
         const args: Value[] = [];

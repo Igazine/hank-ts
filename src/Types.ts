@@ -91,6 +91,7 @@ export interface TokenData {
     line: number;
     column: number;
     lineText: string;
+    filename?: string;
 }
 
 export interface IHankSerializable {
@@ -130,7 +131,8 @@ export enum HankError {
     BitwiseOutOfBounds = 4005,
     GenericRuntimeError = 4006,
     TypeMismatch = 4007,
-}
+    InstructionLimitExceeded = 4008
+    }
 
 export class HankErrorValue extends Error {
     constructor(

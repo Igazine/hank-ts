@@ -28,6 +28,15 @@ async function main() {
     }
     try {
         const res = await runner.run(resource, hankArgs);
+        if (res.type === ValueType.Error) {
+            const loc = runner.localization;
+            let tmpl = loc[res.code] || "Unknown Error";
+            (res.args || []).forEach((a, i) => {
+                tmpl = tmpl.replace(`{${i}}`, String(a.value || "Void"));
+            });
+            process.stderr.write(`Error ${res.code}: ${tmpl}\n`);
+            process.exit(1);
+        }
         if (res.type === ValueType.Number) {
             process.exit(Math.floor(res.value));
         }
@@ -46,13 +55,14 @@ function handleError(e) {
         process.stderr.write(String(e) + "\n");
     }
 }
-function createRunner() {
-    const runner = new Runner();
+function createRunner(options) {
+    const runner = new Runner(options);
     // 0. Register Localization
     runner.registerLocalization({
         4001: "Target is not a function: {0}",
         4007: "Type Mismatch: Expected {0}, got {1} in {2}",
-        4005: "Value exceeds safe integer bounds: {0} in {1}"
+        4005: "Value exceeds safe integer bounds: {0} in {1}",
+        4008: "Instruction Limit Exceeded: Script reached the maximum allowed AST evaluations ({0})"
     });
     // Register Extensions
     runner.registerExtension(new StdLib());
@@ -78,10 +88,14 @@ async function runConformance(workspaceRoot) {
         "test/conformance/17_num_module.hank",
         "test/conformance/18_runtime_module.hank",
         "test/conformance/19_error_handling.hank",
+        "test/conformance/20_grammar_hardening.hank",
+        "test/conformance/21_data_functional.hank",
+        "test/conformance/22_instruction_limit.hank",
     ];
     for (const t of tests) {
         console.log(`--- Running Conformance: ${t} ---`);
-        const runner = createRunner();
+        const opts = t.includes("22_instruction_limit") ? { maxInstructions: 1000 } : undefined;
+        const runner = createRunner(opts);
         const testPath = path.resolve(workspaceRoot, t);
         const resource = FileResource.create(testPath);
         const args = [];
@@ -89,7 +103,15 @@ async function runConformance(workspaceRoot) {
             args.push({ type: ValueType.String, value: "Tamas" });
         }
         try {
-            await runner.run(resource, args);
+            const res = await runner.run(resource, args);
+            if (res.type === ValueType.Error) {
+                const loc = runner.localization;
+                let tmpl = loc[res.code] || "Unknown Error";
+                (res.args || []).forEach((a, i) => {
+                    tmpl = tmpl.replace(`{${i}}`, String(a.value || "Void"));
+                });
+                process.stderr.write(`Error ${res.code}: ${tmpl}\n`);
+            }
         }
         catch (e) {
             handleError(e);

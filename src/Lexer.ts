@@ -34,17 +34,20 @@ export interface Token {
     line: number;
     column: number;
     lineText: string;
+    filename?: string;
 }
 
 export class Lexer {
     private input: string;
+    private filename?: string;
     private pos: number = 0;
     private line: number = 1;
     private lineStart: number = 0;
     private tokens: Token[] = [];
 
-    constructor(input: string) {
+    constructor(input: string, filename?: string) {
         this.input = input;
+        this.filename = filename;
     }
 
     tokenize(): Token[] {
@@ -120,7 +123,8 @@ export class Lexer {
             literal,
             line: this.line,
             column,
-            lineText: this.getCurrentLineText()
+            lineText: this.getCurrentLineText(),
+            filename: this.filename
         });
     }
 
